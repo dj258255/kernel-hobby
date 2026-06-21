@@ -119,6 +119,36 @@ impl Writer {
             self.buffer.chars[row][col].write(blank);
         }
     }
+
+    // 백스페이스: 커서를 한 칸 뒤로 옮기고 그 자리를 공백으로 지운다.
+    pub fn backspace(&mut self) {
+        if self.column_position > 0 {
+            self.column_position -= 1;
+            let row = BUFFER_HEIGHT - 1;
+            let col = self.column_position;
+            self.buffer.chars[row][col].write(ScreenChar {
+                ascii_character: b' ',
+                color_code: self.color_code,
+            });
+        }
+    }
+
+    // 화면 전체를 비우고 커서를 처음으로 되돌린다.
+    pub fn clear_screen(&mut self) {
+        for row in 0..BUFFER_HEIGHT {
+            self.clear_row(row);
+        }
+        self.column_position = 0;
+    }
+}
+
+// 전역 WRITER를 통해 셸에서 호출하는 편의 함수들.
+pub fn backspace() {
+    WRITER.lock().backspace();
+}
+
+pub fn clear_screen() {
+    WRITER.lock().clear_screen();
 }
 
 // 이걸 구현하면 write!/writeln! 및 format_args!(숫자 포맷팅 등)를 쓸 수 있다.

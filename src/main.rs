@@ -1,24 +1,23 @@
 // anime_os — 토이 커널
-// 5단계: 페이징 + 힙 할당 (Box/Vec 같은 동적 할당 지원).
+// 6단계: 키보드 입력 + 힙을 엮은 간단한 커널 셸.
 #![no_std]
 #![no_main]
 #![feature(abi_x86_interrupt)]
 
-extern crate alloc; // 동적 할당(Box, Vec 등)을 쓰기 위한 alloc 크레이트
+extern crate alloc; // 동적 할당(String, Vec 등)을 쓰기 위한 alloc 크레이트
 
 mod allocator;
 mod gdt;
 mod interrupts;
 mod memory;
+mod shell;
 mod vga_buffer;
 
-use alloc::{boxed::Box, vec::Vec};
 use bootloader::{entry_point, BootInfo};
 use core::panic::PanicInfo;
 use x86_64::VirtAddr;
 
-// entry_point!: 부트로더가 넘겨주는 BootInfo를 안전하게 받도록
-// 진입점을 정의한다(이전의 #[no_mangle] _start를 대체).
+// entry_point!: 부트로더가 넘겨주는 BootInfo를 안전하게 받는 진입점.
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
@@ -26,35 +25,18 @@ fn kernel_main(boot_info: &'static BootInfo) -> ! {
 
     gdt::init();
     interrupts::init();
-    println!("  [ok] interrupts enabled");
 
-    // 페이징 + 힙 초기화
+    // 페이징 + 힙 초기화 (셸의 줄 버퍼/명령 처리에 동적 할당이 필요)
     let phys_mem_offset = VirtAddr::new(boot_info.physical_memory_offset);
     let mut mapper = unsafe { memory::init(phys_mem_offset) };
     let mut frame_allocator =
         unsafe { memory::BootInfoFrameAllocator::init(&boot_info.memory_map) };
-
     allocator::init_heap(&mut mapper, &mut frame_allocator).expect("heap init failed");
-    println!("  [ok] heap initialized (100 KiB)");
-    println!();
 
-    // 동적 할당 시연 — 이제 Box/Vec을 쓸 수 있다!
-    let heap_value = Box::new(41);
-    println!("  Box::new(41) -> value {} at {:p}", heap_value, heap_value);
+    println!("  [ok] interrupts + heap ready");
 
-    let mut vec = Vec::new();
-    for i in 1..=10 {
-        vec.push(i);
-    }
-    println!("  Vec {:?}  (sum = {})", vec, vec.iter().sum::<i32>());
-
-    println!();
-    println!("dynamic allocation works! type away:");
-    print!("> ");
-
-    loop {
-        x86_64::instructions::hlt();
-    }
+    shell::init(); // 입력 큐를 미리 할당(인터럽트 컨텍스트 할당 방지)
+    shell::run(); // 셸 진입 — 돌아오지 않는다
 }
 
 #[panic_handler]

@@ -4,7 +4,7 @@
 // CPU가 예외/인터럽트를 만나면 이 표를 보고 핸들러로 점프한다.
 
 use crate::gdt;
-use crate::{print, println};
+use crate::println;
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin::Mutex;
@@ -99,9 +99,10 @@ extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStac
 
     if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
         if let Some(key) = keyboard.process_keyevent(key_event) {
+            // 핸들러는 글자를 셸 큐에 넘기기만 한다(출력/처리는 메인 셸이).
             match key {
-                DecodedKey::Unicode(character) => print!("{}", character),
-                DecodedKey::RawKey(key) => print!("{:?}", key),
+                DecodedKey::Unicode(character) => crate::shell::push_char(character),
+                DecodedKey::RawKey(_) => {}
             }
         }
     }
