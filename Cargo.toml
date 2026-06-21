@@ -31,6 +31,10 @@ pic8259 = "0.10.1"
 pc-keyboard = "0.7.0"
 # 힙 할당기. 매핑해둔 힙 영역 위에서 Box/Vec 같은 동적 할당을 처리한다.
 linked_list_allocator = "0.10.5"
-# 락-프리 고정 크기 큐. 키보드 인터럽트 핸들러가 메인 셸로 글자를
+# 락-프리 고정 크기 큐. 인터럽트 핸들러가 비동기 태스크로 스캔코드를
 # 안전하게 넘기는 통로(인터럽트 중 락/힙 할당을 피함).
 crossbeam-queue = { version = "0.3.11", default-features = false, features = ["alloc"] }
+# 비동기 스트림/Waker 유틸 (키보드를 async Stream으로 다룬다).
+futures-util = { version = "0.3.30", default-features = false, features = ["alloc"] }
+# 한 번만 초기화되는 전역 컨테이너(스캔코드 큐). no_std 스핀 버전.
+conquer-once = { version = "0.4.0", default-features = false }

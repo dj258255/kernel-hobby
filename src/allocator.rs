@@ -48,3 +48,16 @@ pub fn init_heap(
 
     Ok(())
 }
+
+// 힙 사용 통계 (used, free, total) — 셸 mem 명령에서 쓴다.
+// 락을 짧게 잡고 숫자만 복사해 나온다(출력은 락 해제 후).
+pub fn heap_stats() -> (usize, usize, usize) {
+    let used;
+    let free;
+    {
+        let heap = ALLOCATOR.lock();
+        used = heap.used();
+        free = heap.free();
+    }
+    (used, free, HEAP_SIZE)
+}

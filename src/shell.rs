@@ -1,55 +1,44 @@
-// shell — 아주 단순한 커널 셸
+// shell — 비동기 커널 셸
 //
-// 키보드 인터럽트 핸들러는 글자를 INPUT_QUEUE에 넣기만 하고(짧게 끝),
-// 메인 루프(run)가 큐에서 꺼내 한 줄을 조립한 뒤 Enter에서 명령을 실행한다.
+// executor가 돌리는 async 태스크. 키보드 스트림을 await로 받아 한 줄을
+// 조립하고, Enter에서 명령을 실행한다. 다른 태스크와 동시에 진행된다.
 
+use crate::task::keyboard::ScancodeStream;
 use crate::vga_buffer;
-use crate::{print, println};
+use crate::{allocator, interrupts, print, println};
 use alloc::string::String;
-use crossbeam_queue::ArrayQueue;
-use lazy_static::lazy_static;
+use futures_util::stream::StreamExt;
+use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
 
-lazy_static! {
-    // 락-프리 고정 크기 큐(256칸). 인터럽트 핸들러와 메인 루프가
-    // 안전하게(락 없이) 글자를 주고받는다.
-    static ref INPUT_QUEUE: ArrayQueue<char> = ArrayQueue::new(256);
-}
+pub async fn run() {
+    let mut scancodes = ScancodeStream::new();
+    let mut keyboard = Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore);
+    let mut line = String::new();
 
-// 큐를 미리 할당해 둔다(인터럽트 컨텍스트에서 첫 할당이 일어나지 않게).
-pub fn init() {
-    lazy_static::initialize(&INPUT_QUEUE);
-}
-
-// 키보드 인터럽트 핸들러가 호출. 큐에 넣기만 한다(가득 차면 버림).
-pub fn push_char(c: char) {
-    let _ = INPUT_QUEUE.push(c);
-}
-
-// 셸 메인 루프. 다시 돌아오지 않는다.
-pub fn run() -> ! {
     print_banner();
     print_prompt();
 
-    let mut line = String::new();
-    loop {
-        match INPUT_QUEUE.pop() {
-            Some('\n') => {
-                println!();
-                execute(line.trim());
-                line.clear();
-                print_prompt();
-            }
-            Some('\u{8}') => {
-                // 백스페이스: 줄 버퍼와 화면에서 한 글자 지움
-                if line.pop().is_some() {
-                    vga_buffer::backspace();
+    while let Some(scancode) = scancodes.next().await {
+        if let Ok(Some(event)) = keyboard.add_byte(scancode) {
+            if let Some(DecodedKey::Unicode(c)) = keyboard.process_keyevent(event) {
+                match c {
+                    '\n' => {
+                        println!();
+                        execute(line.trim());
+                        line.clear();
+                        print_prompt();
+                    }
+                    '\u{8}' => {
+                        if line.pop().is_some() {
+                            vga_buffer::backspace();
+                        }
+                    }
+                    c => {
+                        line.push(c);
+                        print!("{}", c); // 입력 에코
+                    }
                 }
             }
-            Some(c) => {
-                line.push(c);
-                print!("{}", c); // 입력 에코
-            }
-            None => x86_64::instructions::hlt(), // 큐가 비면 다음 키까지 잔다
         }
     }
 }
@@ -65,7 +54,6 @@ fn print_banner() {
     println!();
 }
 
-// 한 줄을 명령어 + 인자로 나눠 실행한다.
 fn execute(line: &str) {
     if line.is_empty() {
         return;
@@ -80,13 +68,24 @@ fn execute(line: &str) {
             println!("  help         show this help");
             println!("  echo <text>  print text back");
             println!("  about        about this OS");
+            println!("  uptime       timer ticks since boot");
+            println!("  mem          heap usage");
             println!("  clear        clear the screen");
             println!("  whoami       who is running this");
         }
         "echo" => println!("{}", args),
         "about" => {
             println!("anime_os v0.1.0  --  a hobby OS written in Rust");
-            println!("path: boot -> vga -> interrupts -> keyboard -> heap -> shell");
+            println!("boot -> vga -> interrupts -> heap -> async tasks -> shell");
+        }
+        "uptime" => {
+            // 타이머 인터럽트 발생 횟수. 실제 주파수는 설정에 따라 달라
+            // 정확한 초 환산은 하지 않고 raw 틱을 그대로 보여준다.
+            println!("timer ticks since boot: {}", interrupts::ticks());
+        }
+        "mem" => {
+            let (used, free, total) = allocator::heap_stats();
+            println!("heap: {} used / {} free / {} total (bytes)", used, free, total);
         }
         "clear" => vga_buffer::clear_screen(),
         "whoami" => println!("a proud weeb running their own OS :)"),

@@ -5,10 +5,18 @@
 
 use crate::gdt;
 use crate::println;
+use core::sync::atomic::{AtomicU64, Ordering};
 use lazy_static::lazy_static;
 use pic8259::ChainedPics;
 use spin::Mutex;
 use x86_64::structures::idt::{InterruptDescriptorTable, InterruptStackFrame};
+
+// 타이머 인터럽트가 발생할 때마다 1씩 증가. 셸 uptime 명령이 읽는다.
+pub static TICKS: AtomicU64 = AtomicU64::new(0);
+
+pub fn ticks() -> u64 {
+    TICKS.load(Ordering::Relaxed)
+}
 
 // 8259 PIC 두 개를 32, 40번부터 매핑한다(0~31은 CPU 예외가 쓰므로 피함).
 pub const PIC_1_OFFSET: u8 = 32;
@@ -76,36 +84,21 @@ extern "x86-interrupt" fn double_fault_handler(
 // 타이머: 주기적으로 발생. 지금은 조용히 EOI만 보낸다(화면 어지럽힘 방지).
 // 이 핸들러가 안 죽고 도는 것 자체가 "인터럽트가 켜져 있다"는 증거.
 extern "x86-interrupt" fn timer_interrupt_handler(_stack_frame: InterruptStackFrame) {
+    TICKS.fetch_add(1, Ordering::Relaxed);
     unsafe {
         PICS.lock()
             .notify_end_of_interrupt(InterruptIndex::Timer.as_u8());
     }
 }
 
-// 키보드: 키를 누를 때마다 발생. 포트 0x60에서 스캔코드를 읽어 글자로 변환.
+// 키보드: 포트 0x60에서 스캔코드를 읽어 비동기 스트림 큐에 넣기만 한다.
+// 실제 디코딩/처리는 셸 태스크가 한다(핸들러는 짧게 끝낸다).
 extern "x86-interrupt" fn keyboard_interrupt_handler(_stack_frame: InterruptStackFrame) {
-    use pc_keyboard::{layouts, DecodedKey, HandleControl, Keyboard, ScancodeSet1};
     use x86_64::instructions::port::Port;
 
-    lazy_static! {
-        static ref KEYBOARD: Mutex<Keyboard<layouts::Us104Key, ScancodeSet1>> = Mutex::new(
-            Keyboard::new(ScancodeSet1::new(), layouts::Us104Key, HandleControl::Ignore)
-        );
-    }
-
-    let mut keyboard = KEYBOARD.lock();
     let mut port = Port::new(0x60);
     let scancode: u8 = unsafe { port.read() };
-
-    if let Ok(Some(key_event)) = keyboard.add_byte(scancode) {
-        if let Some(key) = keyboard.process_keyevent(key_event) {
-            // 핸들러는 글자를 셸 큐에 넘기기만 한다(출력/처리는 메인 셸이).
-            match key {
-                DecodedKey::Unicode(character) => crate::shell::push_char(character),
-                DecodedKey::RawKey(_) => {}
-            }
-        }
-    }
+    crate::task::keyboard::add_scancode(scancode);
 
     unsafe {
         PICS.lock()
