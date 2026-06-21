@@ -1,7 +1,7 @@
 # 베어메탈 타겟엔 미리 컴파일된 core 라이브러리가 없으므로,
 # core/compiler_builtins를 소스에서 직접 빌드한다(rust-src 컴포넌트 필요).
 [unstable]
-build-std = ["core", "compiler_builtins"]
+build-std = ["core", "compiler_builtins", "alloc"]
 build-std-features = ["compiler-builtins-mem"]
 # 최신 nightly는 .json 커스텀 타겟에 이 플래그를 요구한다.
 json-target-spec = true

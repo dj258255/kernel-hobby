@@ -13,8 +13,9 @@ panic = "abort"
 
 [dependencies]
 # BIOS가 우리 커널을 메모리에 올리고 _start로 점프하게 해주는 부트로더.
-# 직접 짜면 어셈블리 지옥이라 검증된 크레이트를 빌려 쓴다.
-bootloader = "0.9.23"
+# map_physical_memory: 부팅 시 전체 물리 메모리를 가상 주소에 미리 매핑해
+# 줘서, 커널이 페이지 테이블을 쉽게 다룰 수 있게 한다.
+bootloader = { version = "0.9.23", features = ["map_physical_memory"] }
 # VGA 메모리는 "쓰면 화면이 바뀌는" 특수 메모리. 컴파일러가 최적화로
 # 쓰기를 생략하지 못하게 Volatile(휘발성) 래퍼로 감싼다.
 volatile = "0.2.6"
@@ -28,3 +29,5 @@ x86_64 = "0.14.2"
 pic8259 = "0.10.1"
 # 키보드가 보내는 스캔코드(눌린 키의 하드웨어 번호)를 실제 글자로 변환한다.
 pc-keyboard = "0.7.0"
+# 힙 할당기. 매핑해둔 힙 영역 위에서 Box/Vec 같은 동적 할당을 처리한다.
+linked_list_allocator = "0.10.5"
