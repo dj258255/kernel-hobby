@@ -1,0 +1,30 @@
+[package]
+name = "anime_os"
+version = "0.1.0"
+edition = "2021"
+
+# 패닉이 나도 "스택 되감기(unwinding)"를 하지 않고 즉시 중단.
+# 되감기는 std/OS 기능이라 베어메탈에선 쓸 수 없음 → abort로 고정.
+[profile.dev]
+panic = "abort"
+
+[profile.release]
+panic = "abort"
+
+[dependencies]
+# BIOS가 우리 커널을 메모리에 올리고 _start로 점프하게 해주는 부트로더.
+# 직접 짜면 어셈블리 지옥이라 검증된 크레이트를 빌려 쓴다.
+bootloader = "0.9.23"
+# VGA 메모리는 "쓰면 화면이 바뀌는" 특수 메모리. 컴파일러가 최적화로
+# 쓰기를 생략하지 못하게 Volatile(휘발성) 래퍼로 감싼다.
+volatile = "0.2.6"
+# 전역 Writer를 여러 곳에서 안전하게 쓰기 위한 락(스핀락).
+spin = "0.5.2"
+# 런타임에 한 번만 초기화되는 전역 변수(전역 Writer)를 만들기 위한 매크로.
+lazy_static = { version = "1.0", features = ["spin_no_std"] }
+# x86_64 CPU의 레지스터·테이블(IDT, GDT, TSS 등)을 안전한 Rust API로 다룬다.
+x86_64 = "0.14.2"
+# 하드웨어 인터럽트를 CPU에 전달하는 8259 PIC 칩을 제어한다.
+pic8259 = "0.10.1"
+# 키보드가 보내는 스캔코드(눌린 키의 하드웨어 번호)를 실제 글자로 변환한다.
+pc-keyboard = "0.7.0"

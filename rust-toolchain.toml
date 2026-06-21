@@ -1,0 +1,5 @@
+# 이 폴더에 들어오면 자동으로 nightly + 필요한 컴포넌트를 쓰게 고정.
+# 덕분에 매번 `cargo +nightly ...` 안 쳐도 됨.
+[toolchain]
+channel = "nightly"
+components = ["rust-src", "llvm-tools-preview"]
