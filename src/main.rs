@@ -1,4 +1,4 @@
-// anime_os — 토이 커널
+// hobby_kernel — 토이 커널
 // 7단계: async/await 협력적 멀티태스킹 (셸 태스크 + 동시 태스크).
 #![no_std]
 #![no_main]
@@ -22,7 +22,7 @@ use x86_64::VirtAddr;
 entry_point!(kernel_main);
 
 fn kernel_main(boot_info: &'static BootInfo) -> ! {
-    println!("anime_os v0.1.0 booting...");
+    println!("hobby_kernel v0.1.0 booting...");
 
     gdt::init();
     interrupts::init();

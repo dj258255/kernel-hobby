@@ -44,12 +44,12 @@ pub async fn run() {
 }
 
 fn print_prompt() {
-    print!("anime_os> ");
+    print!("hobby_kernel> ");
 }
 
 fn print_banner() {
     println!();
-    println!("  welcome to the anime_os shell");
+    println!("  welcome to the hobby_kernel shell");
     println!("  type 'help' to see commands");
     println!();
 }
@@ -75,7 +75,7 @@ fn execute(line: &str) {
         }
         "echo" => println!("{}", args),
         "about" => {
-            println!("anime_os v0.1.0  --  a hobby OS written in Rust");
+            println!("hobby_kernel v0.1.0  --  a hobby OS written in Rust");
             println!("boot -> vga -> interrupts -> heap -> async tasks -> shell");
         }
         "uptime" => {
