@@ -29,6 +29,11 @@ static inline uint64 r_time(void)    { uint64 x; asm volatile("csrr %0, time" : 
 // stimecmp (sstc 확장, CSR 0x14D). 어셈블러가 이름을 모를 수 있어 번호로 접근.
 static inline void w_stimecmp(uint64 x) { asm volatile("csrw 0x14d, %0" : : "r"(x)); }
 
+// 페이징
+static inline void   w_satp(uint64 x) { asm volatile("csrw satp, %0" : : "r"(x)); }
+static inline uint64 r_satp(void) { uint64 x; asm volatile("csrr %0, satp" : "=r"(x)); return x; }
+static inline void   sfence_vma(void) { asm volatile("sfence.vma zero, zero"); }  // TLB flush
+
 // S-mode 글로벌 인터럽트 켜기
 static inline void intr_on(void) { w_sstatus(r_sstatus() | SSTATUS_SIE); }
 

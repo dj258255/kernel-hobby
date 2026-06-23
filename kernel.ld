@@ -11,7 +11,9 @@ SECTIONS
     .text : {
         *(.text.entry)      /* _entry가 맨 앞에 오도록 */
         *(.text .text.*)
+        . = ALIGN(0x1000);  /* etext를 페이지 경계로 (텍스트 R/X 매핑용) */
     }
+    PROVIDE(etext = .);
 
     .rodata : { *(.rodata .rodata.*) }
     .data   : { *(.data .data.*) }
