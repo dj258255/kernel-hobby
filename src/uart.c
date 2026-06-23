@@ -31,3 +31,26 @@ void uart_puts(const char *s) {
         uart_putc(*s);
     }
 }
+
+void uart_dec(uint64 n) {
+    char buf[21];
+    int i = 0;
+    if (n == 0) {
+        uart_putc('0');
+        return;
+    }
+    while (n > 0) {
+        buf[i++] = (char)('0' + (n % 10));
+        n /= 10;
+    }
+    while (i > 0)
+        uart_putc(buf[--i]);
+}
+
+void uart_hex(uint64 n) {
+    uart_puts("0x");
+    for (int shift = 60; shift >= 0; shift -= 4) {
+        int d = (int)((n >> shift) & 0xf);
+        uart_putc(d < 10 ? (char)('0' + d) : (char)('a' + d - 10));
+    }
+}

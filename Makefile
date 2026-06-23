@@ -7,12 +7,12 @@ OBJCOPY := $(CROSS)objcopy
 
 # rv64imac + lp64(소프트플로트 ABI): 부팅 시 FPU(sstatus.FS)가 꺼져 있어도
 # float 명령이 안 나가 안전. medany: 어느 주소에서도 동작하는 코드 모델.
-CFLAGS  := -march=rv64imac -mabi=lp64 -mcmodel=medany \
+CFLAGS  := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany \
            -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
            -Wall -Wextra -O2 -g -Isrc
 LDFLAGS := -T kernel.ld -nostdlib
 
-OBJS := build/entry.o build/uart.o build/main.o
+OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/main.o
 
 all: build/kernel.elf
 
