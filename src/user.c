@@ -1,57 +1,65 @@
 // user.c — 유저 프로그램 + 시스템콜 디스패치
 //
-// Stage 5: 유저 프로그램은 이제 '프로세스'다. 자기 페이지 테이블(주소공간)을
-// 갖고, 스케줄러가 U-mode로 실행한다. ecall로 커널에 일을 부탁한다(시스템콜).
+// Stage 5+: 유저 프로그램이 fork()로 자신을 복제한다. 부모와 자식은
+// fork() 다음 줄부터 똑같이 실행하되, 반환값(a0)만 다르다(부모=자식pid, 자식=0).
 
 #include "user.h"
 #include "types.h"
 #include "uart.h"
-#include "proc.h"   // current_proc(), yield(), proc 상태
+#include "proc.h"   // current_proc(), yield(), proc_fork()
 
 #define SYS_putchar 1
 #define SYS_print   2
 #define SYS_tick    3
 #define SYS_exit    4
+#define SYS_fork    5
 
 // 유저 프로그램(naked: 프롤로그/에필로그 없음).
-// 인사 한 번(SYS_print) → 30회 동안 (틱 + 바쁜 대기) → 종료(SYS_exit).
-// 바쁜 대기 루프가 틱 사이 간격을 벌려, ps에서 카운터가 천천히 오르는 게 보인다.
-// 메모리 접근이 없어(레지스터만 사용) USERVA로 바이트 복사해도 위치독립 실행된다.
+// fork() → 부모/자식이 각자 인사 → 25회 (틱 + 바쁜 대기) → 종료.
+// fork()의 반환값 a0(부모=pid, 자식=0)를 그대로 SYS_print의 선택자로 쓴다.
 __attribute__((naked)) void user_program(void) {
     asm volatile(
-        "li a7, 2\n"            // SYS_print: 인사 한 번
+        "li a7, 5\n"            // SYS_fork
+        "ecall\n"               //   a0 = 자식 pid(부모) / 0(자식)
+        "li a7, 2\n"            // SYS_print: a0=0이면 자식 메시지, 아니면 부모 메시지
         "ecall\n"
-        "li s1, 40\n"           // 바깥 루프: 40회 틱 후 종료
+        "li s1, 25\n"           // 바깥 루프: 25회 틱 후 종료
         "1:\n"
         "  li a7, 3\n"          // SYS_tick
         "  ecall\n"
-        "  li s0, 0x4000000\n"  // 바쁜 대기(~67M 카운트다운: 틱 간격 벌리기)
+        "  li s0, 0x2000000\n"  // 바쁜 대기(~33M: 틱 간격 벌리기)
         "2: addi s0, s0, -1\n"
         "   bnez s0, 2b\n"
         "  addi s1, s1, -1\n"
         "  bnez s1, 1b\n"
         "li a7, 4\n"            // SYS_exit
         "ecall\n"
-        "3: j 3b\n"             // 안전망(여기 도달하면 그냥 대기)
+        "3: j 3b\n"             // 안전망
     );
 }
 
 void syscall(struct regframe *f) {
     switch (f->a7) {
     case SYS_putchar:
-        uart_putc((char)f->a0);  // 유저가 a0로 넘긴 글자 출력
+        uart_putc((char)f->a0);
         f->a0 = 0;
         break;
     case SYS_print:
-        uart_puts("Hello from a user PROCESS! (own page table, U-mode)\n");
+        if (f->a0 != 0)
+            uart_puts("  [parent] fork() returned a child; we are two now.\n");
+        else
+            uart_puts("  [child]  hello -- I was created by fork().\n");
         f->a0 = 0;
         break;
     case SYS_tick:
-        current_proc()->counter++;  // ps에서 이 유저 프로세스가 도는 게 보인다
+        current_proc()->counter++;  // ps에서 이 프로세스가 도는 게 보인다
         break;
     case SYS_exit:
         current_proc()->state = UNUSED;  // 스케줄러가 다시는 안 고름
         yield();                         // 스케줄러로 영구 양보(돌아오지 않음)
+        break;
+    case SYS_fork:
+        f->a0 = proc_fork(f);  // 부모 반환값 = 자식 pid (자식은 proc_fork가 0으로 세팅)
         break;
     default:
         uart_puts("[syscall] unknown number\n");

@@ -45,6 +45,10 @@ kernelvec:
         mv      a0, sp          # 저장된 프레임 포인터를 kerneltrap의 인자로
         call    kerneltrap
 
+# 프레임에서 복원하고 sret하는 공통 경로. forkret(아래)도 여기로 진입한다.
+# 진입 시 sp는 복원할 트랩 프레임을 가리켜야 한다.
+        .globl  trapret
+trapret:
         ld      t0,  240(sp)    # 프레임의 sepc/sstatus를 CSR로 복원(sret 전)
         csrw    sepc, t0
         ld      t0,  248(sp)
@@ -83,3 +87,11 @@ kernelvec:
         addi    sp, sp, 256
 
         sret                # sepc로 복귀 (인터럽트면 원래 자리로 재개)
+
+# forkret — fork된 자식이 처음 스케줄될 때 진입점(context.ra).
+# 스케줄러가 swtch로 진입시키며, s0에는 자식의 트랩 프레임 VA가 들어 있다
+# (swtch가 context.s0에서 복원). sp를 그 프레임으로 잡고 공통 복귀 경로로.
+        .globl  forkret
+forkret:
+        mv      sp, s0
+        j       trapret

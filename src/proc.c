@@ -10,15 +10,18 @@
 #include "uart.h"
 #include "vm.h"
 #include "user.h"   // user_program
+#include "trap.h"   // struct regframe
 
 #define NPROC  8
 #define PGSIZE 4096
 
 extern void swtch(struct context *old, struct context *new);
+extern void forkret(void);  // kernelvec.S — fork된 자식 진입점
 
 static struct proc    proctable[NPROC];
 static struct context sched_context;   // 스케줄러 자신의 컨텍스트
 static struct proc   *cur = 0;         // 현재 실행 중인 proc
+static int            next_pid = 1;    // 다음 프로세스 ID
 
 static void zero(void *p, uint64 n) {
     char *d = p;
@@ -92,10 +95,13 @@ struct proc *make_user_proc(const char *name) {
         char *code = kalloc();
         copybytes(code, (const void *)user_program, PGSIZE);
         char *ustack = kalloc();                       // 유저 스택 1페이지
+        p->ucode = code;
+        p->ustack = ustack;
         p->pagetable = proc_pagetable((uint64)code, (uint64)ustack);
         p->is_user = 1;
         p->counter = 0;
         p->fn = 0;
+        p->pid = next_pid++;
         p->kstack = kalloc();                          // 커널 스택(enter_user 실행용)
         zero(&p->context, sizeof(p->context));
         p->context.ra = (uint64)enter_user;            // 첫 swtch는 enter_user로
@@ -107,6 +113,52 @@ struct proc *make_user_proc(const char *name) {
         return p;
     }
     return 0;
+}
+
+// 현재 유저 프로세스를 복제한다(fork). 부모에겐 자식 pid를, 자식에겐 0을 반환.
+//   f = 부모의 트랩 프레임(유저 스택 위, ecall 시점 상태).
+int proc_fork(struct regframe *f) {
+    struct proc *parent = cur;
+    for (int i = 0; i < NPROC; i++) {
+        struct proc *child = &proctable[i];
+        if (child->state != UNUSED)
+            continue;
+
+        // 부모의 코드/스택 페이지를 새 물리 페이지로 통째 복사
+        char *code = kalloc();
+        char *ustack = kalloc();
+        copybytes(code, parent->ucode, PGSIZE);
+        copybytes(ustack, parent->ustack, PGSIZE);
+        child->ucode = code;
+        child->ustack = ustack;
+        child->pagetable = proc_pagetable((uint64)code, (uint64)ustack);
+
+        // 자식 스택에 복사된 트랩 프레임을 손본다:
+        //  - 부모 프레임은 유저 VA (uint64)f 에 있고, 같은 VA가 자식에도 매핑됨.
+        //  - 물리적으로는 복사본 ustack 안의 같은 오프셋에 들어 있다.
+        uint64 off = (uint64)f - USERSTACK;
+        struct regframe *cf = (struct regframe *)(ustack + off);
+        cf->a0 = 0;             // 자식의 fork() 반환값 = 0
+        cf->sepc = f->sepc + 4; // ecall 다음 명령부터(부모와 동일 지점)
+
+        // 자식은 forkret로 진입 → s0(프레임 VA)로 sp 잡고 공통 복귀 경로
+        zero(&child->context, sizeof(child->context));
+        child->context.ra = (uint64)forkret;
+        child->context.s0 = (uint64)f;             // 프레임 VA(자식에서도 동일)
+        child->context.sp = (uint64)USERSTACKTOP;  // forkret 첫 명령이 덮어씀
+
+        child->is_user = 1;
+        child->counter = 0;
+        child->fn = 0;
+        child->pid = next_pid++;
+        int j = 0;
+        for (; parent->name[j] && j < 6; j++) child->name[j] = parent->name[j];
+        child->name[j++] = '+';   // 자식 표시
+        child->name[j] = 0;
+        child->state = RUNNABLE;
+        return child->pid;
+    }
+    return -1;  // 빈 슬롯 없음
 }
 
 // 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.
@@ -143,7 +195,9 @@ void proc_dump(void) {
             continue;
         uart_puts("  ");
         uart_puts(p->name);
-        uart_puts(": ticks=");
+        uart_puts(p->is_user ? " (user pid=" : " (kernel pid=");
+        uart_dec(p->pid);
+        uart_puts("): ticks=");
         uart_dec(p->counter);
         uart_putc('\n');
     }

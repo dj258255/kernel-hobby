@@ -23,14 +23,15 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 - **Stage 3**: 유저모드 + 시스템콜 (U-mode 진입, `ecall` → putchar/print 디스패치)
 - **Stage 4**: 프로세스 + 선점형 스케줄러 (swtch.S 컨텍스트 스위치, 타이머 선점, 셸 복귀 + `ps`)
 - **Stage 5**: 유저 프로세스 (프로세스별 페이지 테이블=주소공간 격리, 스케줄러가 U-mode로 실행, `SYS_exit` 생명주기)
+- **Stage 5+**: `fork()` — 주소공간 복사로 프로세스 복제(부모=자식 pid, 자식=0), pid
 
-> 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화).
+> 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화). fork는 부모의 트랩 프레임이 유저 스택에 있다는 점을 이용 — 스택 페이지를 복사하면 같은 VA에 프레임이 그대로 들어가, `forkret`이 그 프레임으로 복귀.
 
 ## 로드맵 ("작은 유닉스"로)
 
 | 단계 | 내용 | xv6 참고 |
 |---|---|---|
-| Stage 5+ | fork/exec + ELF 로더 (현재는 임베드된 프로그램) | `kernel/exec.c` |
+| Stage 5++ | exec + ELF 로더 (별도 프로그램 적재) | `kernel/exec.c` |
 | Stage 6 | 파일시스템 (virtio-blk 디스크 + inode) | `kernel/fs.c`, `bio.c` |
 | Stage 7 | 유저공간 셸 + 기본 프로그램 | `user/sh.c` |
 
