@@ -10,9 +10,13 @@ OBJCOPY := $(CROSS)objcopy
 CFLAGS  := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany \
            -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
            -Wall -Wextra -O2 -g -Isrc
+# 유저 프로그램: 작게(-Os), _start를 맨 앞에 두려고 함수별 섹션 분리
+UCFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany \
+           -ffreestanding -nostdlib -fno-builtin -fno-stack-protector \
+           -ffunction-sections -Os -g -Iuser
 LDFLAGS := -T kernel.ld -nostdlib
 
-OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/shell.o build/kalloc.o build/vm.o build/user.o build/proc.o build/swtch.o build/main.o
+OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/shell.o build/kalloc.o build/vm.o build/elf.o build/user.o build/proc.o build/swtch.o build/initcode.o build/main.o
 
 all: build/kernel.elf
 
@@ -24,6 +28,16 @@ build/%.o: src/%.S | build
 
 build/%.o: src/%.c | build
 	$(CC) $(CFLAGS) -c $< -o $@
+
+# --- 유저 프로그램(별도 컴파일 → ELF) ---
+build/user_init.o: user/init.c user/usys.h | build
+	$(CC) $(UCFLAGS) -c user/init.c -o $@
+
+build/user_init.elf: build/user_init.o user/user.ld
+	$(LD) -T user/user.ld build/user_init.o -o $@
+
+# initcode.S는 위에서 만든 ELF를 .incbin으로 임베드하므로 의존성 추가
+build/initcode.o: build/user_init.elf
 
 build/kernel.elf: $(OBJS) kernel.ld
 	$(LD) $(LDFLAGS) $(OBJS) -o $@

@@ -9,14 +9,15 @@
 #include "csr.h"
 #include "uart.h"
 #include "vm.h"
-#include "user.h"   // user_program
 #include "trap.h"   // struct regframe
+#include "elf.h"    // load_elf
 
 #define NPROC  8
 #define PGSIZE 4096
 
 extern void swtch(struct context *old, struct context *new);
 extern void forkret(void);  // kernelvec.S — fork된 자식 진입점
+extern char initcode[];     // initcode.S — 임베드된 유저 프로그램 ELF
 
 static struct proc    proctable[NPROC];
 static struct context sched_context;   // 스케줄러 자신의 컨텍스트
@@ -91,9 +92,14 @@ struct proc *make_user_proc(const char *name) {
         struct proc *p = &proctable[i];
         if (p->state != UNUSED)
             continue;
-        // 유저 코드 페이지: 프로그램을 새 물리 페이지로 복사
+        // 유저 코드 페이지: 임베드된 ELF를 파싱해 적재
         char *code = kalloc();
-        copybytes(code, (const void *)user_program, PGSIZE);
+        zero(code, PGSIZE);                            // .bss(0 채움) 대비 미리 0
+        uint64 entry;
+        if (load_elf(initcode, code, &entry) != 0)
+            return 0;                                  // ELF 적재 실패
+        if (entry != USERVA)                           // _start는 USERVA에 링크됨
+            uart_puts("[warn] elf entry != USERVA\n");
         char *ustack = kalloc();                       // 유저 스택 1페이지
         p->ucode = code;
         p->ustack = ustack;

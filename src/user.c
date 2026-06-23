@@ -1,7 +1,7 @@
-// user.c — 유저 프로그램 + 시스템콜 디스패치
+// user.c — 시스템콜 디스패치 (커널 측)
 //
-// Stage 5+: 유저 프로그램이 fork()로 자신을 복제한다. 부모와 자식은
-// fork() 다음 줄부터 똑같이 실행하되, 반환값(a0)만 다르다(부모=자식pid, 자식=0).
+// 유저 프로그램은 이제 user/init.c로 따로 컴파일되어 ELF로 임베드된다.
+// 여기는 그 프로그램이 ecall로 부른 시스템콜을 처리하는 커널 측 핸들러다.
 
 #include "user.h"
 #include "types.h"
@@ -13,30 +13,6 @@
 #define SYS_tick    3
 #define SYS_exit    4
 #define SYS_fork    5
-
-// 유저 프로그램(naked: 프롤로그/에필로그 없음).
-// fork() → 부모/자식이 각자 인사 → 25회 (틱 + 바쁜 대기) → 종료.
-// fork()의 반환값 a0(부모=pid, 자식=0)를 그대로 SYS_print의 선택자로 쓴다.
-__attribute__((naked)) void user_program(void) {
-    asm volatile(
-        "li a7, 5\n"            // SYS_fork
-        "ecall\n"               //   a0 = 자식 pid(부모) / 0(자식)
-        "li a7, 2\n"            // SYS_print: a0=0이면 자식 메시지, 아니면 부모 메시지
-        "ecall\n"
-        "li s1, 25\n"           // 바깥 루프: 25회 틱 후 종료
-        "1:\n"
-        "  li a7, 3\n"          // SYS_tick
-        "  ecall\n"
-        "  li s0, 0x2000000\n"  // 바쁜 대기(~33M: 틱 간격 벌리기)
-        "2: addi s0, s0, -1\n"
-        "   bnez s0, 2b\n"
-        "  addi s1, s1, -1\n"
-        "  bnez s1, 1b\n"
-        "li a7, 4\n"            // SYS_exit
-        "ecall\n"
-        "3: j 3b\n"             // 안전망
-    );
-}
 
 void syscall(struct regframe *f) {
     switch (f->a7) {
