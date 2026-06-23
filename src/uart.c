@@ -5,11 +5,15 @@
 // (이게 OS 출력의 본질 — 하드웨어 주소에 직접 쓴다. xv6의 uart.c와 같은 방식.)
 
 #include "uart.h"
+#include "shell.h"
 
 #define UART0 0x10000000L
+#define UART_RBR 0  // Receive Buffer Register (읽으면 받은 글자)
 #define UART_THR 0  // Transmit Holding Register (쓰면 한 글자 전송)
+#define UART_IER 1  // Interrupt Enable Register
 #define UART_LSR 5  // Line Status Register
-#define LSR_TX_IDLE (1 << 5)  // THR가 비어 다음 글자를 받을 수 있음
+#define LSR_RX_READY (1 << 0)  // 받은 글자가 있음
+#define LSR_TX_IDLE  (1 << 5)  // THR가 비어 다음 글자를 받을 수 있음
 
 static volatile unsigned char *const uart = (volatile unsigned char *)UART0;
 
@@ -53,4 +57,21 @@ void uart_hex(uint64 n) {
         int d = (int)((n >> shift) & 0xf);
         uart_putc(d < 10 ? (char)('0' + d) : (char)('a' + d - 10));
     }
+}
+
+void uart_enable_rx(void) {
+    uart[UART_IER] |= 0x01;  // "received data available" 인터럽트 enable
+}
+
+int uart_getc(void) {
+    if (uart[UART_LSR] & LSR_RX_READY)
+        return uart[UART_RBR];
+    return -1;  // 받은 글자 없음
+}
+
+// UART 인터럽트가 났을 때 호출: 버퍼에 쌓인 글자를 모두 읽어 셸로 넘긴다.
+void uart_intr(void) {
+    int c;
+    while ((c = uart_getc()) >= 0)
+        shell_input((char)c);
 }
