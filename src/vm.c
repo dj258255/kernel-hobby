@@ -87,16 +87,41 @@ static void kvmmap(pagetable_t kpt, uint64 va, uint64 pa, uint64 sz, int perm) {
     }
 }
 
+// 커널 영역(UART/PLIC/텍스트/데이터)을 식별 매핑한다.
+// 커널 페이지 테이블과 모든 프로세스 페이지 테이블이 똑같이 이 매핑을 갖는다.
+static void map_kernel(pagetable_t pt) {
+    kvmmap(pt, UART0, UART0, PGSIZE, PTE_R | PTE_W);              // UART
+    kvmmap(pt, PLIC, PLIC, 0x400000, PTE_R | PTE_W);             // PLIC
+    kvmmap(pt, KERNBASE, KERNBASE,                               // 커널 텍스트 R/X
+           (uint64)etext - KERNBASE, PTE_R | PTE_X);
+    kvmmap(pt, (uint64)etext, (uint64)etext,                     // 데이터+나머지 RAM R/W
+           PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+}
+
 void kvminit(void) {
     kernel_pagetable = (pagetable_t)kalloc();
     memset(kernel_pagetable, 0, PGSIZE);
+    map_kernel(kernel_pagetable);
+}
 
-    kvmmap(kernel_pagetable, UART0, UART0, PGSIZE, PTE_R | PTE_W);        // UART
-    kvmmap(kernel_pagetable, PLIC, PLIC, 0x400000, PTE_R | PTE_W);        // PLIC
-    kvmmap(kernel_pagetable, KERNBASE, KERNBASE,                         // 커널 텍스트 R/X
-           (uint64)etext - KERNBASE, PTE_R | PTE_X);
-    kvmmap(kernel_pagetable, (uint64)etext, (uint64)etext,               // 데이터+나머지 RAM R/W
-           PHYSTOP - (uint64)etext, PTE_R | PTE_W);
+pagetable_t kernel_pt(void) { return kernel_pagetable; }
+
+// satp를 pt로 전환하고 TLB를 비운다(스케줄러가 프로세스 전환 시 호출).
+void switch_satp(pagetable_t pt) {
+    w_satp(MAKE_SATP(pt));
+    sfence_vma();
+}
+
+// 프로세스별 페이지 테이블: 커널 식별 매핑 + 유저 코드(U|R|X) + 유저 스택(U|R|W).
+pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa) {
+    pagetable_t pt = (pagetable_t)kalloc();
+    if (pt == 0)
+        return 0;
+    memset(pt, 0, PGSIZE);
+    map_kernel(pt);
+    mappages(pt, USERVA, PGSIZE, ucode_pa, PTE_R | PTE_X | PTE_U);
+    mappages(pt, USERSTACK, PGSIZE, ustack_pa, PTE_R | PTE_W | PTE_U);
+    return pt;
 }
 
 void kvminithart(void) {

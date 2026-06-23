@@ -9,8 +9,7 @@
 #include "vm.h"
 #include "proc.h"
 
-// 데모 스레드: 스핀하며 자기 카운터를 증가. 타이머가 선점해 다른 스레드로 전환.
-// 'ps' 명령으로 두 카운터가 함께 늘어나는 걸(=동시 실행) 확인할 수 있다.
+// 데모용 커널 스레드: 스핀하며 자기 카운터를 증가(타이머가 선점).
 static void counter_thread(void) {
     for (;;)
         current_proc()->counter++;
@@ -40,14 +39,14 @@ void kmain(void) {
     kvminithart();      // satp 적재 → 페이징 ON (Sv39, 식별 매핑)
     uart_puts("[ok] paging enabled (Sv39 kernel page table)\n");
 
-    // Stage 4: 프로세스 + 선점형 스케줄러 + 셸 복귀.
+    // Stage 5: 커널 스레드 + 유저 프로세스(자체 주소공간)를 함께 스케줄.
     procinit();
-    make_thread(counter_thread, "spinA");
-    make_thread(counter_thread, "spinB");
-    uart_puts("[ok] scheduler + 2 threads running. try 'ps'.\n");
+    make_thread(counter_thread, "spinK");  // 커널 스레드(S-mode)
+    make_user_proc("userP");               // 유저 프로세스(U-mode, 자체 페이지 테이블)
+    uart_puts("[ok] scheduler: 1 kernel thread + 1 user process. try 'ps'.\n");
 
-    // 셸 입력은 UART 인터럽트로 처리되어, 어느 스레드가 돌든 응답한다.
+    // 셸 입력은 UART 인터럽트로 처리되어, 어느 프로세스가 돌든 응답한다.
     shell_init();   // 환영 + 프롬프트 (마지막)
 
-    scheduler();    // RUNNABLE 스레드를 선점형으로 실행 (돌아오지 않음)
+    scheduler();    // RUNNABLE 프로세스를 선점형으로 실행 (돌아오지 않음)
 }

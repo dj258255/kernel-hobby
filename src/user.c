@@ -1,86 +1,57 @@
-// user.c — 유저모드 진입 + 시스템콜
+// user.c — 유저 프로그램 + 시스템콜 디스패치
 //
-// 트램폴린 없이 단순화한 방식:
-//  - 커널 페이지 테이블에 유저 코드/스택을 PTE_U로 추가 매핑(한 주소공간)
-//  - sstatus.SUM=1 → 트랩 시 커널이 유저 스택에 레지스터를 저장 가능
-//  - 트랩 진입점은 기존 kernelvec 재사용(sp가 유저 스택이어도 동작)
-// (xv6의 트램폴린/프로세스별 페이지 테이블은 Stage 4에서 도입)
+// Stage 5: 유저 프로그램은 이제 '프로세스'다. 자기 페이지 테이블(주소공간)을
+// 갖고, 스케줄러가 U-mode로 실행한다. ecall로 커널에 일을 부탁한다(시스템콜).
 
 #include "user.h"
 #include "types.h"
-#include "csr.h"
-#include "vm.h"
-#include "kalloc.h"
 #include "uart.h"
-
-#define PGSIZE    4096
-#define USERVA    0x1000L   // 유저 코드 가상주소
-#define USERSTACK 0x4000L   // 유저 스택 가상주소(1페이지)
+#include "proc.h"   // current_proc(), yield(), proc 상태
 
 #define SYS_putchar 1
 #define SYS_print   2
+#define SYS_tick    3
+#define SYS_exit    4
 
-// 유저 프로그램. naked라 프롤로그/에필로그가 없고, 메모리 접근 없이
-// ecall만 하므로 USERVA로 바이트 복사해도 그대로 위치독립 실행된다.
-__attribute__((naked)) void user_program(void);
+// 유저 프로그램(naked: 프롤로그/에필로그 없음).
+// 인사 한 번(SYS_print) → 30회 동안 (틱 + 바쁜 대기) → 종료(SYS_exit).
+// 바쁜 대기 루프가 틱 사이 간격을 벌려, ps에서 카운터가 천천히 오르는 게 보인다.
+// 메모리 접근이 없어(레지스터만 사용) USERVA로 바이트 복사해도 위치독립 실행된다.
 __attribute__((naked)) void user_program(void) {
     asm volatile(
-        "li a7, 1\n"   // SYS_putchar
-        "li a0, 85\n"  // 'U'
+        "li a7, 2\n"            // SYS_print: 인사 한 번
         "ecall\n"
-        "li a7, 1\n"
-        "li a0, 10\n"  // '\n'
+        "li s1, 40\n"           // 바깥 루프: 40회 틱 후 종료
+        "1:\n"
+        "  li a7, 3\n"          // SYS_tick
+        "  ecall\n"
+        "  li s0, 0x4000000\n"  // 바쁜 대기(~67M 카운트다운: 틱 간격 벌리기)
+        "2: addi s0, s0, -1\n"
+        "   bnez s0, 2b\n"
+        "  addi s1, s1, -1\n"
+        "  bnez s1, 1b\n"
+        "li a7, 4\n"            // SYS_exit
         "ecall\n"
-        "li a7, 2\n"   // SYS_print
-        "ecall\n"
-        "1: j 1b\n"    // 이후 U-mode에서 대기(타이머 인터럽트는 계속 처리됨)
-    );
-}
-
-static void copy_page(void *dst, const void *src, uint64 n) {
-    char *d = dst;
-    const char *s = src;
-    while (n-- > 0)
-        *d++ = *s++;
-}
-
-void user_init(void) {
-    // 유저 코드 페이지: 새 페이지에 프로그램을 복사해 USERVA에 U+R+X로 매핑
-    void *code = kalloc();
-    copy_page(code, (const void *)user_program, PGSIZE);
-    kvm_map(USERVA, (uint64)code, PGSIZE, PTE_U | PTE_R | PTE_X);
-
-    // 유저 스택 페이지: U+R+W
-    void *stack = kalloc();
-    kvm_map(USERSTACK, (uint64)stack, PGSIZE, PTE_U | PTE_R | PTE_W);
-}
-
-void user_run(void) {
-    uint64 s = r_sstatus();
-    s &= ~SSTATUS_SPP;   // SPP=0 → sret 시 U-mode로
-    s |= SSTATUS_SPIE;   // U-mode에서 인터럽트 enable
-    s |= SSTATUS_SUM;    // S-mode가 유저(U) 페이지에 트랩 프레임 저장 가능
-    s &= ~SSTATUS_SIE;   // sret 직전 S-mode 인터럽트는 꺼둔다(SPIE가 U에서 켬)
-    w_sstatus(s);
-    w_sepc(USERVA);      // 유저 진입점
-
-    // 유저 스택 top으로 sp를 잡고 sret. 이 함수는 돌아오지 않는다.
-    asm volatile(
-        "mv sp, %0\n"
-        "sret\n"
-        :: "r"(USERSTACK + PGSIZE)
+        "3: j 3b\n"             // 안전망(여기 도달하면 그냥 대기)
     );
 }
 
 void syscall(struct regframe *f) {
     switch (f->a7) {
     case SYS_putchar:
-        uart_putc((char)f->a0);   // 유저가 a0로 넘긴 글자 출력
+        uart_putc((char)f->a0);  // 유저가 a0로 넘긴 글자 출력
         f->a0 = 0;
         break;
     case SYS_print:
-        uart_puts("Hello from user mode! (printed by the kernel, requested via ecall)\n");
+        uart_puts("Hello from a user PROCESS! (own page table, U-mode)\n");
         f->a0 = 0;
+        break;
+    case SYS_tick:
+        current_proc()->counter++;  // ps에서 이 유저 프로세스가 도는 게 보인다
+        break;
+    case SYS_exit:
+        current_proc()->state = UNUSED;  // 스케줄러가 다시는 안 고름
+        yield();                         // 스케줄러로 영구 양보(돌아오지 않음)
         break;
     default:
         uart_puts("[syscall] unknown number\n");

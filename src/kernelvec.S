@@ -37,9 +37,18 @@ kernelvec:
         sd      t4,  216(sp)
         sd      t5,  224(sp)
         sd      t6,  232(sp)
+        csrr    t0, sepc        # 복귀 PC와 모드 비트도 프레임에 저장
+        sd      t0,  240(sp)    #  (트랩마다 독립 → 여러 프로세스 인터리빙 안전)
+        csrr    t0, sstatus
+        sd      t0,  248(sp)
 
         mv      a0, sp          # 저장된 프레임 포인터를 kerneltrap의 인자로
         call    kerneltrap
+
+        ld      t0,  240(sp)    # 프레임의 sepc/sstatus를 CSR로 복원(sret 전)
+        csrw    sepc, t0
+        ld      t0,  248(sp)
+        csrw    sstatus, t0
 
         ld      ra,    0(sp)
         ld      gp,    8(sp)

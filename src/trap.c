@@ -20,6 +20,8 @@ static uint64 ticks = 0;
 void trap_init(void) {
     w_stvec((uint64)kernelvec);              // 트랩 벡터 등록 (Direct 모드)
     w_sie(r_sie() | SIE_STIE | SIE_SEIE);    // 타이머 + 외부 인터럽트 enable
+    w_sstatus(r_sstatus() | SSTATUS_SUM);    // SUM=1 고정: 커널이 항상 유저 페이지 접근 가능
+                                             // (유저 프로세스 트랩을 유저 스택에서 처리하므로 필수)
 }
 
 void timer_init(void) {
@@ -61,7 +63,7 @@ void kerneltrap(struct regframe *f) {
     } else if (cause == SCAUSE_U_ECALL) {
         // 유저 프로그램이 ecall로 커널에 '부탁'한 것 = 시스템콜.
         syscall(f);
-        w_sepc(r_sepc() + 4);  // ecall(4바이트) 다음 명령으로 복귀
+        f->sepc += 4;  // ecall(4바이트) 다음 명령으로 복귀(프레임의 sepc 수정)
     } else {
         // 예외 — 정보를 찍고 멈춘다(디버깅용 안전망)
         uart_puts("[trap] EXCEPTION  scause=");

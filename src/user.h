@@ -4,8 +4,7 @@
 
 #include "trap.h"  // struct regframe
 
-void user_init(void);              // 유저 프로그램/스택을 페이지 테이블에 매핑
-void user_run(void);               // U-mode로 진입 (돌아오지 않음)
+void user_program(void);           // 유저 프로그램(naked) — 코드 페이지로 복사됨
 void syscall(struct regframe *f);  // ecall 디스패치
 
 #endif

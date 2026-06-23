@@ -14,8 +14,18 @@ typedef uint64 *pagetable_t;
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4)  // U-mode 접근 가능
 
+// 유저 프로세스 주소 배치
+#define USERVA        0x1000L   // 유저 코드 진입점
+#define USERSTACK     0x4000L   // 유저 스택(1페이지)
+#define USERSTACKTOP  (USERSTACK + 4096)
+
 void kvminit(void);      // 커널 페이지 테이블 생성 + 매핑
 void kvminithart(void);  // satp에 커널 페이지 테이블 적재(페이징 ON)
-void kvm_map(uint64 va, uint64 pa, uint64 sz, int perm);  // 커널 페이지 테이블에 매핑(유저 페이지 등)
+void kvm_map(uint64 va, uint64 pa, uint64 sz, int perm);  // 커널 페이지 테이블에 매핑
+
+// 프로세스별 페이지 테이블: 커널을 식별 매핑한 새 테이블 + 유저 코드/스택(PTE_U).
+pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa);
+pagetable_t kernel_pt(void);             // 커널 페이지 테이블
+void        switch_satp(pagetable_t pt); // satp 전환 + TLB flush
 
 #endif

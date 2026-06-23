@@ -10,6 +10,8 @@ struct regframe {
     uint64 a0, a1, a2, a3, a4, a5, a6, a7;        //  64 .. 120
     uint64 s2, s3, s4, s5, s6, s7, s8, s9, s10, s11; // 128 .. 200
     uint64 t3, t4, t5, t6;                        // 208 .. 232
+    uint64 sepc;     // 240: 복귀 PC (트랩마다 독립 저장 — 프로세스 인터리빙 대비)
+    uint64 sstatus;  // 248: 모드 비트(SPP/SPIE 등)
 };
 
 void   trap_init(void);     // stvec 등록 + 타이머/외부 인터럽트 enable
