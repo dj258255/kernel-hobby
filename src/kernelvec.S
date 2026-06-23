@@ -38,6 +38,7 @@ kernelvec:
         sd      t5,  224(sp)
         sd      t6,  232(sp)
 
+        mv      a0, sp          # 저장된 프레임 포인터를 kerneltrap의 인자로
         call    kerneltrap
 
         ld      ra,    0(sp)

@@ -20,12 +20,14 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 - **커널 셸**: help / about / uptime / mem / clear / whoami / echo
 - **페이지 할당기**: kalloc/kfree (물리 메모리 ~125MB)
 - **Stage 2**: 페이징(Sv39 3단계 페이지 테이블, 커널 식별 매핑)
+- **Stage 3**: 유저모드 + 시스템콜 (U-mode 진입, `ecall` → putchar/print 디스패치)
+
+> 셸은 Stage 3에서 유저모드 데모로 잠시 비활성. Stage 4(프로세스/스케줄러)에서 유저 프로그램과 함께 다시 올린다.
 
 ## 로드맵 ("작은 유닉스"로)
 
 | 단계 | 내용 | xv6 참고 |
 |---|---|---|
-| Stage 3 | **유저모드 + 시스템콜** (U-mode 진입, `ecall` 디스패치) | `kernel/trampoline.S`, `syscall.c` |
 | Stage 4 | 프로세스 + 선점형 스케줄러 (context switch) | `kernel/proc.c`, `swtch.S` |
 | Stage 5 | fork/exec + ELF 로더 | `kernel/exec.c` |
 | Stage 6 | 파일시스템 (virtio-blk 디스크 + inode) | `kernel/fs.c`, `bio.c` |

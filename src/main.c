@@ -7,6 +7,7 @@
 #include "shell.h"
 #include "kalloc.h"
 #include "vm.h"
+#include "user.h"
 
 void kmain(void) {
     uart_init();
@@ -32,10 +33,12 @@ void kmain(void) {
     kvminithart();      // satp 적재 → 페이징 ON (Sv39, 식별 매핑)
     uart_puts("[ok] paging enabled (Sv39 kernel page table)\n");
 
-    shell_init();       // 환영 + 프롬프트
-    interrupts_on();    // 글로벌 인터럽트 켜기 (모든 준비 후 마지막)
+    // Stage 3: 유저모드 + 시스템콜 데모.
+    // (셸은 Stage 4에서 프로세스 위에 다시 올린다)
+    user_init();   // 유저 프로그램/스택 매핑
+    uart_puts("[kernel] entering user mode (U-mode)...\n");
+    user_run();    // sret로 U-mode 진입 (돌아오지 않음)
 
-    // 인터럽트(타이머/키보드)를 기다리며 CPU를 재운다.
     for (;;)
-        asm volatile("wfi");
+        asm volatile("wfi");  // 도달하지 않음
 }

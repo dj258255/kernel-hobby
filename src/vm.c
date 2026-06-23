@@ -12,13 +12,7 @@
 
 #define PGSIZE  4096
 #define PGSHIFT 12
-
-// PTE 플래그
-#define PTE_V (1L << 0)  // valid
-#define PTE_R (1L << 1)  // read
-#define PTE_W (1L << 2)  // write
-#define PTE_X (1L << 3)  // exec
-#define PTE_U (1L << 4)  // user 접근 가능
+// PTE 플래그(PTE_V/R/W/X/U)는 vm.h에 정의됨
 
 #define PA2PTE(pa)  ((((uint64)(pa)) >> 12) << 10)
 #define PTE2PA(pte) (((pte) >> 10) << 12)
@@ -109,4 +103,10 @@ void kvminithart(void) {
     sfence_vma();
     w_satp(MAKE_SATP(kernel_pagetable));  // 페이징 ON
     sfence_vma();
+}
+
+// 커널 페이지 테이블에 매핑을 추가한다(유저 코드/스택 페이지 등).
+void kvm_map(uint64 va, uint64 pa, uint64 sz, int perm) {
+    kvmmap(kernel_pagetable, va, pa, sz, perm);
+    sfence_vma();  // 활성 페이지 테이블을 바꿨으니 TLB flush
 }

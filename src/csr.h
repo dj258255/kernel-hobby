@@ -5,7 +5,10 @@
 #include "types.h"
 
 // sstatus (S-mode 상태)
-#define SSTATUS_SIE (1UL << 1)   // S-mode 글로벌 인터럽트 enable
+#define SSTATUS_SIE  (1UL << 1)   // S-mode 글로벌 인터럽트 enable
+#define SSTATUS_SPIE (1UL << 5)   // sret 후 인터럽트 enable 복원
+#define SSTATUS_SPP  (1UL << 8)   // 0=직전이 U-mode, 1=S-mode
+#define SSTATUS_SUM  (1UL << 18)  // S-mode가 U페이지 접근 허용
 
 // sie (S-mode 인터럽트 enable)
 #define SIE_SSIE (1UL << 1)      // 소프트웨어
@@ -23,6 +26,7 @@ static inline void   w_sie(uint64 x) { asm volatile("csrw sie, %0" : : "r"(x)); 
 static inline void   w_stvec(uint64 x) { asm volatile("csrw stvec, %0" : : "r"(x)); }
 static inline uint64 r_scause(void)  { uint64 x; asm volatile("csrr %0, scause" : "=r"(x)); return x; }
 static inline uint64 r_sepc(void)    { uint64 x; asm volatile("csrr %0, sepc" : "=r"(x)); return x; }
+static inline void   w_sepc(uint64 x){ asm volatile("csrw sepc, %0" : : "r"(x)); }
 static inline uint64 r_stval(void)   { uint64 x; asm volatile("csrr %0, stval" : "=r"(x)); return x; }
 static inline uint64 r_time(void)    { uint64 x; asm volatile("csrr %0, time" : "=r"(x)); return x; }
 

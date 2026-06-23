@@ -5,12 +5,14 @@
 #include "csr.h"
 #include "uart.h"
 #include "plic.h"
+#include "user.h"
 
 extern void kernelvec(void);  // kernelvec.S
 
 // QEMU virt 타이머는 10MHz → 1,000,000 = 0.1초.
 #define TIMER_INTERVAL 1000000UL
 #define SCAUSE_S_EXTERNAL 9   // 인터럽트 코드 9 = S-mode 외부 인터럽트
+#define SCAUSE_U_ECALL    8   // 예외 코드 8 = U-mode에서의 ecall(시스템콜)
 
 static uint64 ticks = 0;
 
@@ -32,7 +34,7 @@ uint64 clock_ticks(void) {
 }
 
 // kernelvec.S가 레지스터를 저장한 뒤 호출한다.
-void kerneltrap(void) {
+void kerneltrap(struct regframe *f) {
     uint64 cause = r_scause();
 
     if (cause & SCAUSE_INTERRUPT) {
@@ -53,6 +55,10 @@ void kerneltrap(void) {
             uart_hex(cause);
             uart_putc('\n');
         }
+    } else if (cause == SCAUSE_U_ECALL) {
+        // 유저 프로그램이 ecall로 커널에 '부탁'한 것 = 시스템콜.
+        syscall(f);
+        w_sepc(r_sepc() + 4);  // ecall(4바이트) 다음 명령으로 복귀
     } else {
         // 예외 — 정보를 찍고 멈춘다(디버깅용 안전망)
         uart_puts("[trap] EXCEPTION  scause=");
