@@ -1,39 +1,48 @@
 # hobby-kernel
 
-Rust로 바닥부터 만든 x86_64 토이 커널. 부팅·화면 출력·예외 처리·키보드 입력·메모리 관리·비동기 멀티태스킹·간단한 셸까지 OS의 핵심 골격을 직접 구현한 학습 프로젝트입니다.
+C로 바닥부터 만드는 **RISC-V 학습용 커널**. OS 내부(유저/커널 경계·시스템콜·프로세스·파일시스템)를 직접 구현하며 공부하는 게 목표.
 
-## 구현한 것
-
-| 단계 | 내용 |
-|---|---|
-| 0 | `no_std` 베어메탈 환경 + 커스텀 x86_64 타겟 |
-| 1 | 부팅 + VGA 텍스트 버퍼 직접 출력 |
-| 2 | `println!` 매크로 + 스크롤/색상 출력 시스템 |
-| 3 | CPU 예외 처리(IDT) + GDT 더블폴트 비상 스택 |
-| 4 | 하드웨어 인터럽트(PIC) + 키보드 입력 |
-| 5 | 페이징 + 힙 할당 (`Box`/`Vec` 동적 할당) |
-| 6 | 간단한 커널 셸 (help/echo/about/uptime/mem/clear/whoami) |
-| 7 | async/await 협력적 멀티태스킹 (executor + 비동기 키보드 스트림) |
+> **마이그레이션 노트**: 이 커널은 처음에 Rust로 만들었다가(부팅~인터럽트~힙~async 셸), 학습 본편을 **C로 전면 재작성**했다. 커널의 정석 언어가 C이고, 참고서로 쓰는 [xv6(MIT 6.S081)](https://pdos.csail.mit.edu/6.828/2023/xv6.html)도 C라 마찰이 가장 적기 때문.
+> 이전 Rust 버전은 **`rust-v1` 태그**에 그대로 보존되어 있다 (`git checkout rust-v1`).
 
 ## 빌드 & 실행
 
 ```bash
-# 사전 준비
-rustup toolchain install nightly
-rustup component add rust-src llvm-tools-preview --toolchain nightly
-cargo install bootimage
-brew install qemu   # 또는 각 OS의 qemu 설치
+# 사전: riscv64 크로스 컴파일러 + QEMU
+brew install riscv64-elf-gcc qemu
 
-# 빌드 + QEMU 실행
-cargo run
+make          # build/kernel.elf
+make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 다음 X
+```
+
+## 현재 상태
+
+- ✅ **Step 0**: QEMU virt에서 S-mode 부팅 + NS16550 UART(`0x1000_0000`) 직접 출력
+
+## 로드맵 ("작은 유닉스"로)
+
+| 단계 | 내용 | xv6 참고 |
+|---|---|---|
+| Stage 1 | 트랩/인터럽트 + 타이머 (S-mode 트랩 핸들러) | `kernel/trap.c`, `kernelvec.S` |
+| Stage 2 | 페이지 테이블(Sv39) + 커널 가상메모리 | `kernel/vm.c` |
+| Stage 3 | **유저모드 + 시스템콜** (U-mode 진입, `ecall` 디스패치) ⭐ | `kernel/trampoline.S`, `syscall.c` |
+| Stage 4 | 프로세스 + 선점형 스케줄러 (context switch) | `kernel/proc.c`, `swtch.S` |
+| Stage 5 | fork/exec + ELF 로더 | `kernel/exec.c` |
+| Stage 6 | 파일시스템 (virtio-blk 디스크 + inode) | `kernel/fs.c`, `bio.c` |
+| Stage 7 | 유저공간 셸 + 기본 프로그램 | `user/sh.c` |
+
+## 구조
+
+```
+hobby-kernel/
+├── src/
+│   ├── entry.S   # S-mode 진입점 (스택 설정 → kmain)
+│   ├── uart.c/.h # NS16550 UART 드라이버
+│   └── main.c    # kmain
+├── kernel.ld     # 0x8020_0000에 링크
+└── Makefile
 ```
 
 ## 스택
 
-Rust (nightly) · `bootloader` 0.9 · `x86_64` · `pic8259` · `pc-keyboard` · `linked_list_allocator` · `futures-util` · QEMU
-
-## 참고
-
-[Writing an OS in Rust (Philipp Oppermann)](https://os.phil-opp.com/) 커리큘럼을 기반으로 하되, 최신 nightly에 맞춰 직접 수정하며 진행했습니다.
-
-제작 과정은 블로그 연재 "취미 OS 만들기"에 정리되어 있습니다.
+C · RISC-V (rv64imac) · riscv64-elf-gcc · QEMU(virt) · OpenSBI
