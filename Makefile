@@ -12,7 +12,7 @@ CFLAGS  := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany \
            -Wall -Wextra -O2 -g -Isrc
 LDFLAGS := -T kernel.ld -nostdlib
 
-OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/shell.o build/main.o
+OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/shell.o build/kalloc.o build/main.o
 
 all: build/kernel.elf
 

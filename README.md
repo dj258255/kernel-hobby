@@ -14,13 +14,18 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 
 ## 현재 상태
 
-- ✅ **Step 0**: QEMU virt에서 S-mode 부팅 + NS16550 UART(`0x1000_0000`) 직접 출력
+- ✅ **Step 0**: S-mode 부팅 + NS16550 UART 출력
+- ✅ **Stage 1**: 트랩/인터럽트 + 타이머 (stvec, sstc)
+- ✅ **키보드 입력**: PLIC 외부 인터럽트 + UART RX
+- ✅ **커널 셸**: help / about / uptime / mem / clear / whoami / echo
+- ✅ **페이지 할당기**: kalloc/kfree (물리 메모리 ~125MB)
 
-## 로드맵 ("작은 유닉스"로)
+> 여기까지로 이전 Rust 버전의 기능(출력·인터럽트·키보드·셸·힙)을 C/RISC-V로 전부 재구현했다. 아래부터는 Rust 커널엔 없던 깊은 영역.
+
+## 로드맵 (이 너머 — "작은 유닉스"로)
 
 | 단계 | 내용 | xv6 참고 |
 |---|---|---|
-| Stage 1 | 트랩/인터럽트 + 타이머 (S-mode 트랩 핸들러) | `kernel/trap.c`, `kernelvec.S` |
 | Stage 2 | 페이지 테이블(Sv39) + 커널 가상메모리 | `kernel/vm.c` |
 | Stage 3 | **유저모드 + 시스템콜** (U-mode 진입, `ecall` 디스패치) ⭐ | `kernel/trampoline.S`, `syscall.c` |
 | Stage 4 | 프로세스 + 선점형 스케줄러 (context switch) | `kernel/proc.c`, `swtch.S` |
