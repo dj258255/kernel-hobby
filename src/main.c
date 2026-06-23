@@ -7,7 +7,14 @@
 #include "shell.h"
 #include "kalloc.h"
 #include "vm.h"
-#include "user.h"
+#include "proc.h"
+
+// 데모 스레드: 스핀하며 자기 카운터를 증가. 타이머가 선점해 다른 스레드로 전환.
+// 'ps' 명령으로 두 카운터가 함께 늘어나는 걸(=동시 실행) 확인할 수 있다.
+static void counter_thread(void) {
+    for (;;)
+        current_proc()->counter++;
+}
 
 void kmain(void) {
     uart_init();
@@ -33,12 +40,14 @@ void kmain(void) {
     kvminithart();      // satp 적재 → 페이징 ON (Sv39, 식별 매핑)
     uart_puts("[ok] paging enabled (Sv39 kernel page table)\n");
 
-    // Stage 3: 유저모드 + 시스템콜 데모.
-    // (셸은 Stage 4에서 프로세스 위에 다시 올린다)
-    user_init();   // 유저 프로그램/스택 매핑
-    uart_puts("[kernel] entering user mode (U-mode)...\n");
-    user_run();    // sret로 U-mode 진입 (돌아오지 않음)
+    // Stage 4: 프로세스 + 선점형 스케줄러 + 셸 복귀.
+    procinit();
+    make_thread(counter_thread, "spinA");
+    make_thread(counter_thread, "spinB");
+    uart_puts("[ok] scheduler + 2 threads running. try 'ps'.\n");
 
-    for (;;)
-        asm volatile("wfi");  // 도달하지 않음
+    // 셸 입력은 UART 인터럽트로 처리되어, 어느 스레드가 돌든 응답한다.
+    shell_init();   // 환영 + 프롬프트 (마지막)
+
+    scheduler();    // RUNNABLE 스레드를 선점형으로 실행 (돌아오지 않음)
 }

@@ -6,6 +6,7 @@
 #include "uart.h"
 #include "plic.h"
 #include "user.h"
+#include "proc.h"
 
 extern void kernelvec(void);  // kernelvec.S
 
@@ -40,9 +41,11 @@ void kerneltrap(struct regframe *f) {
     if (cause & SCAUSE_INTERRUPT) {
         uint64 code = cause & 0xff;
         if (code == SCAUSE_S_TIMER) {
-            // 타이머: 조용히 틱만 센다(uptime 명령이 읽음). 다음 타이머 예약.
+            // 타이머: 틱 카운트 + 다음 타이머 예약 + 현재 스레드 선점.
             ticks++;
             w_stimecmp(r_time() + TIMER_INTERVAL);
+            if (current_proc())
+                yield();  // 실행 중인 스레드를 스케줄러에 양보(선점)
         } else if (code == SCAUSE_S_EXTERNAL) {
             // 외부 장치 인터럽트: PLIC에서 누구인지 받아 처리.
             int irq = plic_claim();
