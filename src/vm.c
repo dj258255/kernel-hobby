@@ -91,6 +91,7 @@ static void kvmmap(pagetable_t kpt, uint64 va, uint64 pa, uint64 sz, int perm) {
 // 커널 페이지 테이블과 모든 프로세스 페이지 테이블이 똑같이 이 매핑을 갖는다.
 static void map_kernel(pagetable_t pt) {
     kvmmap(pt, UART0, UART0, PGSIZE, PTE_R | PTE_W);              // UART
+    kvmmap(pt, 0x10001000L, 0x10001000L, PGSIZE, PTE_R | PTE_W);  // virtio-blk MMIO
     kvmmap(pt, PLIC, PLIC, 0x400000, PTE_R | PTE_W);             // PLIC
     kvmmap(pt, KERNBASE, KERNBASE,                               // 커널 텍스트 R/X
            (uint64)etext - KERNBASE, PTE_R | PTE_X);

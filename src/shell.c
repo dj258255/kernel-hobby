@@ -6,6 +6,7 @@
 #include "trap.h"   // clock_ticks()
 #include "kalloc.h" // kfreecount()
 #include "proc.h"   // proc_dump()
+#include "fs.h"     // fs_ls(), fs_cat()
 
 static char line[128];
 static int  len = 0;
@@ -32,7 +33,7 @@ static void execute(const char *cmd) {
     if (cmd[0] == '\0') {
         return;
     } else if (str_eq(cmd, "help")) {
-        uart_puts("commands: help, about, uptime, mem, ps, clear, whoami, echo <text>\n");
+        uart_puts("commands: help, about, uptime, mem, ps, ls, cat <file>, clear, whoami, echo <text>\n");
     } else if (str_eq(cmd, "about")) {
         uart_puts("hobby-kernel (C / RISC-V) -- a from-scratch learning kernel\n");
     } else if (str_eq(cmd, "uptime")) {
@@ -53,6 +54,10 @@ static void execute(const char *cmd) {
     } else if (str_eq(cmd, "ps")) {
         uart_puts("threads (preemptively scheduled):\n");
         proc_dump();
+    } else if (str_eq(cmd, "ls")) {
+        fs_ls();
+    } else if (starts_with(cmd, "cat ")) {
+        fs_cat(cmd + 4);
     } else if (starts_with(cmd, "echo ")) {
         uart_puts(cmd + 5);
         uart_putc('\n');

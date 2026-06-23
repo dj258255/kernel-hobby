@@ -8,6 +8,8 @@
 #include "kalloc.h"
 #include "vm.h"
 #include "proc.h"
+#include "virtio.h"
+#include "fs.h"
 
 // 데모용 커널 스레드: 스핀하며 자기 카운터를 증가(타이머가 선점).
 static void counter_thread(void) {
@@ -38,6 +40,9 @@ void kmain(void) {
     kvminit();          // 커널 페이지 테이블 생성
     kvminithart();      // satp 적재 → 페이징 ON (Sv39, 식별 매핑)
     uart_puts("[ok] paging enabled (Sv39 kernel page table)\n");
+
+    virtio_disk_init(); // virtio-blk 디스크
+    fs_init();          // 파일시스템 마운트
 
     // Stage 5: 커널 스레드 + 유저 프로세스(자체 주소공간)를 함께 스케줄.
     procinit();
