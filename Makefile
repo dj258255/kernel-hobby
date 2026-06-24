@@ -20,7 +20,7 @@ OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o b
 
 # 호스트(맥) 컴파일러로 빌드하는 도구 + 디스크에 담을 파일들
 HOSTCC  := cc
-FSFILES := fs/motd.txt fs/readme.txt
+FSFILES := fs/motd.txt fs/readme.txt build/hello
 
 all: build/kernel.elf build/fs.img
 
@@ -39,6 +39,13 @@ build/user_init.o: user/init.c user/usys.h | build
 
 build/user_init.elf: build/user_init.o user/user.ld
 	$(LD) -T user/user.ld build/user_init.o -o $@
+
+# 디스크에 올라가는 별도 프로그램(hello). exec("hello")로 적재됨.
+build/user_hello.o: user/hello.c user/usys.h | build
+	$(CC) $(UCFLAGS) -c user/hello.c -o $@
+
+build/hello: build/user_hello.o user/user.ld
+	$(LD) -T user/user.ld build/user_hello.o -o $@
 
 # initcode.S는 위에서 만든 ELF를 .incbin으로 임베드하므로 의존성 추가
 build/initcode.o: build/user_init.elf

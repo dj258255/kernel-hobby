@@ -35,6 +35,7 @@ void         procinit(void);
 struct proc *make_thread(void (*fn)(void), const char *name);
 struct proc *make_user_proc(const char *name);  // 유저 프로세스 생성(자체 주소공간)
 int          proc_fork(struct regframe *f);      // 현재 유저 프로세스를 복제(자식 pid 반환)
+int          proc_exec(const char *path);        // 현재 프로세스를 디스크의 ELF로 교체(실패 시 -1)
 void         scheduler(void);       // 돌아오지 않음
 void         yield(void);           // 타이머/자발적으로 스케줄러에 양보
 struct proc *current_proc(void);    // 현재 실행 중인 proc(없으면 0)

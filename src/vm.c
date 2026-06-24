@@ -107,6 +107,9 @@ void kvminit(void) {
 
 pagetable_t kernel_pt(void) { return kernel_pagetable; }
 
+// 페이지 테이블의 satp 값(Sv39). exec가 userret_to에 넘긴다.
+uint64 satp_for(pagetable_t pt) { return MAKE_SATP(pt); }
+
 // satp를 pt로 전환하고 TLB를 비운다(스케줄러가 프로세스 전환 시 호출).
 void switch_satp(pagetable_t pt) {
     w_satp(MAKE_SATP(pt));

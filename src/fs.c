@@ -59,6 +59,27 @@ void fs_ls(void) {
     }
 }
 
+// 파일 전체를 buf(커널 메모리)로 읽는다. 크기 반환, 없거나 너무 크면 -1.
+int fs_read(const char *name, unsigned char *buf, int max) {
+    if (!mounted) return -1;
+    for (int i = 0; i < nfiles; i++) {
+        if (!streq(dir[i].name, name))
+            continue;
+        uint32 size = dir[i].size;
+        if ((int)size > max) return -1;
+        uint32 blk = dir[i].start, off = 0, remaining = size;
+        while (remaining > 0) {
+            virtio_disk_rw(blk, fsbuf, 0);
+            uint32 n = remaining > BSIZE ? BSIZE : remaining;
+            for (uint32 j = 0; j < n; j++)
+                buf[off + j] = fsbuf[j];
+            off += n; remaining -= n; blk++;
+        }
+        return (int)size;
+    }
+    return -1;
+}
+
 void fs_cat(const char *name) {
     if (!mounted) { uart_puts("cat: no filesystem\n"); return; }
     for (int i = 0; i < nfiles; i++) {

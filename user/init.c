@@ -8,15 +8,23 @@
 
 void _start(void) {
     long pid = sys_fork();   // 자신을 복제(부모=자식pid, 자식=0)
-    sys_print(pid);          // pid를 선택자로: 부모/자식 메시지
 
+    if (pid == 0) {
+        // 자식: 디스크의 hello 프로그램으로 자신을 교체(fork + exec 패턴)
+        sys_exec("hello");
+        sys_print(0);        // exec 실패 시에만 도달
+        sys_exit();
+    }
+
+    // 부모: 인사 후 틱을 돌다 종료
+    sys_print(pid);
     for (int i = 0; i < 25; i++) {
-        sys_tick();          // 커널 측 카운터 증가(ps에서 보임)
+        sys_tick();
         for (volatile long d = 0; d < 0x2000000; d++)
             ;                // 바쁜 대기: 틱 간격 벌리기
     }
 
-    sys_exit();              // 종료(돌아오지 않음)
+    sys_exit();
     for (;;)
         ;                    // 안전망
 }

@@ -11,12 +11,14 @@
 #include "vm.h"
 #include "trap.h"   // struct regframe
 #include "elf.h"    // load_elf
+#include "fs.h"     // fs_read
 
 #define NPROC  8
 #define PGSIZE 4096
 
 extern void swtch(struct context *old, struct context *new);
 extern void forkret(void);  // kernelvec.S — fork된 자식 진입점
+extern void userret_to(uint64 entry, uint64 sp, uint64 satp);  // kernelvec.S — exec 진입
 extern char initcode[];     // initcode.S — 임베드된 유저 프로그램 ELF
 
 static struct proc    proctable[NPROC];
@@ -165,6 +167,41 @@ int proc_fork(struct regframe *f) {
         return child->pid;
     }
     return -1;  // 빈 슬롯 없음
+}
+
+// 현재 프로세스를 디스크의 ELF 프로그램으로 교체한다(exec).
+// 성공하면 새 프로그램으로 진입해 돌아오지 않는다. 실패 시 -1.
+int proc_exec(const char *path) {
+    static uint8 elfbuf[8192];   // 커널 메모리(식별 매핑)
+
+    int sz = fs_read(path, elfbuf, sizeof(elfbuf));
+    if (sz < 0)
+        return -1;
+
+    char *code = kalloc();
+    zero(code, PGSIZE);
+    uint64 entry;
+    if (load_elf((const char *)elfbuf, code, &entry) != 0)
+        return -1;
+    char *ustack = kalloc();
+    pagetable_t newpt = proc_pagetable((uint64)code, (uint64)ustack);
+
+    // 현재 프로세스를 새 이미지로 교체(옛 페이지/테이블은 누수 — 학습 커널)
+    struct proc *p = cur;
+    p->ucode = code;
+    p->ustack = ustack;
+    p->pagetable = newpt;
+
+    // U-mode 진입 준비. sstatus는 CSR라 satp 전환 전에 설정해도 안전.
+    uint64 s = r_sstatus();
+    s &= ~SSTATUS_SPP;   // U-mode로
+    s |= SSTATUS_SPIE;   // 인터럽트 enable
+    s |= SSTATUS_SUM;
+    w_sstatus(s);
+
+    // satp 전환 + sret을 스택 안 건드리고 수행(어셈블리). 돌아오지 않는다.
+    userret_to(entry, (uint64)USERSTACKTOP, satp_for(newpt));
+    return -1;  // 도달하지 않음
 }
 
 // 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.

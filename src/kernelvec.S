@@ -95,3 +95,15 @@ trapret:
 forkret:
         mv      sp, s0
         j       trapret
+
+# userret_to(uint64 entry, uint64 sp, uint64 satp)  [a0, a1, a2]
+# exec 전용: satp(주소공간)를 바꾸고 곧장 U-mode로 진입한다.
+# satp를 바꾸면 유저 스택이 통째로 바뀌므로, 전환 후엔 스택을 절대 건드리지
+# 않고 레지스터만으로 sret한다. (sstatus는 호출 전에 C에서 미리 세팅)
+        .globl  userret_to
+userret_to:
+        csrw    satp, a2
+        sfence.vma zero, zero
+        csrw    sepc, a0
+        mv      sp, a1
+        sret

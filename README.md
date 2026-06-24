@@ -26,15 +26,16 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 - **Stage 5+**: `fork()` — 주소공간 복사로 프로세스 복제(부모=자식 pid, 자식=0), pid
 - **Stage 5++**: ELF 로더 — 따로 컴파일한 유저 프로그램(`user/init.c`)을 ELF로 임베드, 커널이 프로그램 헤더를 파싱해 적재
 - **Stage 6**: 파일시스템 — virtio-blk 디스크 드라이버(모던 MMIO, 폴링) + 읽기 전용 FS(슈퍼블록/디렉터리/데이터), 셸 `ls`/`cat`
+- **Stage 7**: 런타임 `exec()` — 디스크의 ELF 프로그램으로 현재 프로세스를 교체. `fork` + `exec("hello")`로 디스크의 별도 프로그램 실행
 
-> 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화). fork는 부모의 트랩 프레임이 유저 스택에 있다는 점을 이용 — 스택 페이지를 복사하면 같은 VA에 프레임이 그대로 들어가, `forkret`이 그 프레임으로 복귀. 유저 프로그램은 `user/`에서 별도 컴파일 → `.incbin`으로 커널에 임베드. 디스크 이미지는 `tools/mkfs`(호스트 빌드)로 생성하고, virtio 디바이스가 비동기로 갱신하는 used 링은 `volatile`로 읽는다.
+> 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화). fork는 부모의 트랩 프레임이 유저 스택에 있다는 점을 이용 — 스택 페이지를 복사하면 같은 VA에 프레임이 그대로 들어가, `forkret`이 그 프레임으로 복귀. exec는 주소공간을 바꾸면 유저 스택이 통째로 바뀌므로, satp 전환 후 sret까지를 스택을 건드리지 않는 어셈블리(`userret_to`)로 처리. 유저 프로그램은 `user/`에서 별도 컴파일 → `init`은 `.incbin` 임베드, `hello`는 디스크에 적재. virtio used 링은 비동기 갱신이라 `volatile`로 읽는다.
 
 ## 로드맵 ("작은 유닉스"로)
 
 | 단계 | 내용 | xv6 참고 |
 |---|---|---|
-| Stage 7 | 유저공간 셸 + 기본 프로그램(파일에서 exec) | `user/sh.c` |
-| 정제 | 쓰기 가능 FS, 런타임 `exec()`, 다중 페이지 프로그램, inode | `kernel/exec.c`, `fs.c` |
+| Stage 7+ | 유저공간 셸 (`read`/`wait` + sleep/wakeup, sh를 디스크 프로그램으로) | `user/sh.c` |
+| 정제 | 쓰기 가능 FS, 다중 페이지 프로그램, inode, 자원 회수 | `kernel/exec.c`, `fs.c` |
 
 ## 구조
 

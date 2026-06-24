@@ -27,5 +27,6 @@ void kvm_map(uint64 va, uint64 pa, uint64 sz, int perm);  // 커널 페이지 �
 pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa);
 pagetable_t kernel_pt(void);             // 커널 페이지 테이블
 void        switch_satp(pagetable_t pt); // satp 전환 + TLB flush
+uint64      satp_for(pagetable_t pt);    // 페이지 테이블의 satp 값(Sv39)
 
 #endif
