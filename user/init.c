@@ -46,7 +46,7 @@ void _start(void) {
 
         // 내장 명령
         if (streq(line, "help")) {
-            puts("builtins: ls, cat <file>, mem, help.  others run as disk programs.\n");
+            puts("builtins: ls, cat <file>, write <file> <text>, mem, help.  others = disk programs.\n");
             continue;
         }
         if (streq(line, "ls")) {
@@ -59,6 +59,16 @@ void _start(void) {
         }
         if (startswith(line, "cat ")) {
             sys_cat(line + 4);
+            continue;
+        }
+        if (startswith(line, "write ")) {
+            // write <name> <text...>  → 파일 생성
+            char *arg = line + 6;
+            char *sp = arg;
+            while (*sp && *sp != ' ') sp++;
+            if (*sp == ' ') { *sp = 0; sp++; } else { sp = arg + 0; while (*sp) sp++; }
+            if (sys_create(arg, sp) != 0)
+                puts("write: failed (exists? full?)\n");
             continue;
         }
 

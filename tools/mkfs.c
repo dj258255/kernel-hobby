@@ -25,7 +25,7 @@ int main(int argc, char **argv) {
     FILE *out = fopen(argv[1], "wb");
     if (!out) { perror("fopen out"); return 1; }
 
-    struct fs_superblock sb = { FS_MAGIC, (unsigned)nfiles };
+    struct fs_superblock sb = { FS_MAGIC, (unsigned)nfiles, 0 };
     struct fs_dirent dir[MAXFILES];
     memset(dir, 0, sizeof(dir));
 
@@ -56,7 +56,8 @@ int main(int argc, char **argv) {
         if (sizes[i] == 0) cur += 0;       // 빈 파일은 0블록
     }
 
-    // 2) 블록0: 슈퍼블록
+    // 2) 블록0: 슈퍼블록 (next_free = 첫 빈 데이터 블록)
+    sb.next_free = cur;
     char sbblk[BSIZE];
     memset(sbblk, 0, BSIZE);
     memcpy(sbblk, &sb, sizeof(sb));
@@ -83,8 +84,14 @@ int main(int argc, char **argv) {
         free(blobs[i]);
     }
 
+    // 5) 새 파일 생성용 여유 공간으로 패딩(총 TOTAL 블록까지 0으로 채움)
+    unsigned TOTAL = 256;            // 128KB 디스크
+    if (cur > TOTAL) TOTAL = cur;
+    for (unsigned b = cur; b < TOTAL; b++)
+        fwrite(zero, 1, BSIZE, out);
+
     fclose(out);
-    (void)zero;
-    printf("mkfs: wrote %s (%d files, %u blocks)\n", argv[1], nfiles, cur);
+    printf("mkfs: wrote %s (%d files, data up to block %u, total %u blocks)\n",
+           argv[1], nfiles, cur, TOTAL);
     return 0;
 }

@@ -19,6 +19,7 @@
 struct fs_superblock {
     unsigned int magic;
     unsigned int nfiles;
+    unsigned int next_free;   // 다음 빈 데이터 블록(파일 생성 시 여기서 할당)
 };
 
 struct fs_dirent {              // 64바이트 → 한 블록(512)에 8개

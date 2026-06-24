@@ -24,6 +24,7 @@
 #define SYS_mem    11
 #define SYS_sbrk   12
 #define SYS_mmap   13
+#define SYS_create 14
 
 // 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
 static void copy_path(uint64 uptr, char *dst, int max) {
@@ -95,6 +96,15 @@ void syscall(struct regframe *f) {
         copy_path(f->a0, path, sizeof(path));
         fs_cat(path);
         f->a0 = 0;
+        break;
+    }
+    case SYS_create: {
+        static char name[64], data[256];
+        copy_path(f->a0, name, sizeof(name));
+        copy_path(f->a1, data, sizeof(data));   // 내용 문자열(SUM으로 복사)
+        int n = 0;
+        while (data[n]) n++;
+        f->a0 = (uint64)fs_create(name, data, n);
         break;
     }
     default:

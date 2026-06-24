@@ -35,6 +35,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 - **자원 회수**: exec는 페이지 테이블/스택을 재사용(코드만 교체)해 누수 없음, `wait`가 종료한 자식의 유저 페이지+페이지 테이블을 회수 — `hello`를 반복 실행해도 `mem`이 일정
 - **Lazy allocation (demand paging)**: `sbrk`는 힙만 키우고 페이지는 안 줌 → 처음 접근 시 페이지 폴트로 할당. 예외 핸들러가 실제로 메모리를 만든다(디스크 프로그램 `lazytest`로 시연)
 - **mmap**: 파일을 주소공간에 매핑 → `read()` 없이 메모리 접근만으로 읽음. 폴트 시 해당 파일 블록을 디스크에서 적재(디스크 프로그램 `mmaptest`로 시연). 페이지 폴트 핸들러가 힙·mmap 둘 다 처리
+- **쓰기 가능 FS**: 셸 `write <file> <text>`로 파일 생성 — 빈 블록 할당 + 데이터 쓰기 + 디렉터리/슈퍼블록 디스크 갱신. **재부팅해도 영속**(disk write). virtio 쓰기 경로 동작 확인
 
 > 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화). fork는 부모의 트랩 프레임이 유저 스택에 있다는 점을 이용 — 스택 페이지를 복사하면 같은 VA에 프레임이 그대로 들어가, `forkret`이 그 프레임으로 복귀. exec는 주소공간을 바꾸면 유저 스택이 통째로 바뀌므로, satp 전환 후 sret까지를 스택을 건드리지 않는 어셈블리(`userret_to`)로 처리. 유저 프로그램은 `user/`에서 별도 컴파일 → `init`은 `.incbin` 임베드, `hello`는 디스크에 적재. virtio used 링은 비동기 갱신이라 `volatile`로 읽는다.
 
@@ -48,7 +49,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | cow | Copy-on-Write fork | 설계상 제약(우리 fork는 프레임을 유저 스택에 둠) |
 | thread | 멀티스레딩 | 예정 |
 | lock | 병렬성·락(멀티코어 SMP) | 예정 |
-| fs | 쓰기 가능 FS + 로깅(크래시 복구) | 읽기 전용만 |
+| fs | 쓰기 가능 FS(생성/영속) | 완료 (로깅·inode·삭제는 정제) |
 | net | TCP/IP 네트워크 스택 | 예정 |
 
 ## 구조

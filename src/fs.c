@@ -14,6 +14,7 @@
 static struct fs_dirent dir[MAXFILES];
 static int nfiles;
 static int mounted;
+static uint32 next_free;      // 다음 빈 데이터 블록(파일 생성 시 할당)
 static uint8 fsbuf[BSIZE];   // 디스크 I/O 버퍼(커널 메모리)
 
 static int streq(const char *a, const char *b) {
@@ -36,6 +37,7 @@ void fs_init(void) {
     }
     nfiles = (int)sb->nfiles;
     if (nfiles > MAXFILES) nfiles = MAXFILES;
+    next_free = sb->next_free;
 
     virtio_disk_rw(DIRBLOCK, fsbuf, 0);
     struct fs_dirent *d = (struct fs_dirent *)fsbuf;
@@ -108,6 +110,52 @@ void fs_read_page(unsigned start_block, unsigned size, unsigned offset, unsigned
         done += BSIZE;
         blk++;
     }
+}
+
+// 파일 생성(write-once): 데이터 블록 할당+쓰기 → 디렉터리/슈퍼블록 디스크 갱신.
+// 0=성공, -1=실패(공간 없음/중복/마운트 안 됨).
+int fs_create(const char *name, const char *data, int size) {
+    if (!mounted || nfiles >= MAXFILES || size < 0)
+        return -1;
+    for (int i = 0; i < nfiles; i++)
+        if (streq(dir[i].name, name))
+            return -1;                      // 이미 존재(덮어쓰기 미지원)
+
+    int nblocks = (size + BSIZE - 1) / BSIZE;
+    uint32 start = next_free;
+
+    // 1) 데이터 블록 쓰기
+    int off = 0;
+    for (int b = 0; b < nblocks; b++) {
+        for (int j = 0; j < BSIZE; j++) fsbuf[j] = 0;
+        int n = size - off; if (n > BSIZE) n = BSIZE;
+        for (int j = 0; j < n; j++) fsbuf[j] = (uint8)data[off + j];
+        virtio_disk_rw(start + b, fsbuf, 1);   // WRITE
+        off += BSIZE;
+    }
+
+    // 2) 디렉터리 항목 추가(메모리)
+    int slot = nfiles;
+    int k = 0;
+    for (; name[k] && k < NAMELEN - 1; k++) dir[slot].name[k] = name[k];
+    dir[slot].name[k] = 0;
+    dir[slot].size = (unsigned)size;
+    dir[slot].start = start;
+    nfiles++;
+    next_free += nblocks;
+
+    // 3) 디렉터리 블록(1)을 디스크에 다시 쓰기
+    uint8 *db = (uint8 *)dir;
+    for (int j = 0; j < BSIZE; j++) fsbuf[j] = (j < (int)sizeof(dir)) ? db[j] : 0;
+    virtio_disk_rw(DIRBLOCK, fsbuf, 1);
+
+    // 4) 슈퍼블록(0)을 디스크에 다시 쓰기
+    struct fs_superblock sb = { FS_MAGIC, (unsigned)nfiles, next_free };
+    uint8 *sp = (uint8 *)&sb;
+    for (int j = 0; j < BSIZE; j++) fsbuf[j] = (j < (int)sizeof(sb)) ? sp[j] : 0;
+    virtio_disk_rw(0, fsbuf, 1);
+
+    return 0;
 }
 
 void fs_cat(const char *name) {
