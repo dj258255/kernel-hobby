@@ -5,7 +5,7 @@
 // (이게 OS 출력의 본질 — 하드웨어 주소에 직접 쓴다. xv6의 uart.c와 같은 방식.)
 
 #include "uart.h"
-#include "shell.h"
+#include "console.h"
 
 #define UART0 0x10000000L
 #define UART_RBR 0  // Receive Buffer Register (읽으면 받은 글자)
@@ -69,9 +69,9 @@ int uart_getc(void) {
     return -1;  // 받은 글자 없음
 }
 
-// UART 인터럽트가 났을 때 호출: 버퍼에 쌓인 글자를 모두 읽어 셸로 넘긴다.
+// UART 인터럽트가 났을 때 호출: 버퍼에 쌓인 글자를 모두 콘솔로 넘긴다.
 void uart_intr(void) {
     int c;
     while ((c = uart_getc()) >= 0)
-        shell_input((char)c);
+        console_intr((char)c);
 }

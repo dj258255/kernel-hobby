@@ -38,7 +38,8 @@ static inline void   w_satp(uint64 x) { asm volatile("csrw satp, %0" : : "r"(x))
 static inline uint64 r_satp(void) { uint64 x; asm volatile("csrr %0, satp" : "=r"(x)); return x; }
 static inline void   sfence_vma(void) { asm volatile("sfence.vma zero, zero"); }  // TLB flush
 
-// S-mode 글로벌 인터럽트 켜기
+// S-mode 글로벌 인터럽트 켜기/끄기
 static inline void intr_on(void) { w_sstatus(r_sstatus() | SSTATUS_SIE); }
+static inline void intr_off(void) { w_sstatus(r_sstatus() & ~SSTATUS_SIE); }
 
 #endif

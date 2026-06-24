@@ -1,30 +1,71 @@
-// init.c — 따로 컴파일되어 ELF로 커널에 임베드되는 첫 유저 프로그램.
-// 커널이 ELF를 파싱해 USERVA(0x1000)에 적재하고 _start로 진입한다.
+// init.c — 유저공간 셸. 커널에 임베드되어 첫 유저 프로세스로 실행된다.
 //
-// 동작: 자신을 fork → 부모/자식이 각자 인사 → 틱을 돌며 잠깐 일함 → 종료.
-// (전역 변수를 쓰지 않아 .data/.bss가 없고, 한 페이지에 담겨 fork와 호환된다)
+// 루프: 프롬프트 출력 → 한 줄 읽기 → 명령 처리.
+//   내장: ls / cat <file> / help
+//   그 외: fork + exec(디스크의 프로그램) + wait  ← 유닉스가 명령을 실행하는 방식
 
 #include "usys.h"
 
+static void puts(const char *s) {
+    for (; *s; s++)
+        sys_putchar(*s);
+}
+
+static int streq(const char *a, const char *b) {
+    while (*a && *b) {
+        if (*a != *b) return 0;
+        a++; b++;
+    }
+    return *a == *b;
+}
+
+static int startswith(const char *s, const char *p) {
+    while (*p) {
+        if (*s != *p) return 0;
+        s++; p++;
+    }
+    return 1;
+}
+
 void _start(void) {
-    long pid = sys_fork();   // 자신을 복제(부모=자식pid, 자식=0)
+    char line[128];
 
-    if (pid == 0) {
-        // 자식: 디스크의 hello 프로그램으로 자신을 교체(fork + exec 패턴)
-        sys_exec("hello");
-        sys_print(0);        // exec 실패 시에만 도달
-        sys_exit();
+    puts("\nhobby-kernel userspace shell. try: ls, cat motd.txt, hello\n");
+
+    for (;;) {
+        puts("$ ");
+        long n = sys_read(line, sizeof(line) - 1);
+        if (n <= 0)
+            continue;
+        if (line[n - 1] == '\n')
+            line[n - 1] = 0;   // 개행 제거
+        else
+            line[n] = 0;
+        if (line[0] == 0)
+            continue;
+
+        // 내장 명령
+        if (streq(line, "help")) {
+            puts("builtins: ls, cat <file>, help.  others run as disk programs.\n");
+            continue;
+        }
+        if (streq(line, "ls")) {
+            sys_ls();
+            continue;
+        }
+        if (startswith(line, "cat ")) {
+            sys_cat(line + 4);
+            continue;
+        }
+
+        // 외부 명령: 자식을 fork해서 디스크 프로그램으로 exec, 끝날 때까지 wait
+        long pid = sys_fork();
+        if (pid == 0) {
+            sys_exec(line);            // 성공하면 돌아오지 않음
+            puts(line);
+            puts(": command not found\n");
+            sys_exit();
+        }
+        sys_wait();                    // 자식이 끝날 때까지 대기
     }
-
-    // 부모: 인사 후 틱을 돌다 종료
-    sys_print(pid);
-    for (int i = 0; i < 25; i++) {
-        sys_tick();
-        for (volatile long d = 0; d < 0x2000000; d++)
-            ;                // 바쁜 대기: 틱 간격 벌리기
-    }
-
-    sys_exit();
-    for (;;)
-        ;                    // 안전망
 }

@@ -4,18 +4,11 @@
 #include "uart.h"
 #include "trap.h"
 #include "plic.h"
-#include "shell.h"
 #include "kalloc.h"
 #include "vm.h"
 #include "proc.h"
 #include "virtio.h"
 #include "fs.h"
-
-// 데모용 커널 스레드: 스핀하며 자기 카운터를 증가(타이머가 선점).
-static void counter_thread(void) {
-    for (;;)
-        current_proc()->counter++;
-}
 
 void kmain(void) {
     uart_init();
@@ -44,14 +37,10 @@ void kmain(void) {
     virtio_disk_init(); // virtio-blk 디스크
     fs_init();          // 파일시스템 마운트
 
-    // Stage 5: 커널 스레드 + 유저 프로세스(자체 주소공간)를 함께 스케줄.
+    // Stage 7+: 유저공간 셸을 첫 유저 프로세스로 띄운다(커널에 임베드된 init=셸).
     procinit();
-    make_thread(counter_thread, "spinK");  // 커널 스레드(S-mode)
-    make_user_proc("userP");               // 유저 프로세스(U-mode, 자체 페이지 테이블)
-    uart_puts("[ok] scheduler: 1 kernel thread + 1 user process. try 'ps'.\n");
-
-    // 셸 입력은 UART 인터럽트로 처리되어, 어느 프로세스가 돌든 응답한다.
-    shell_init();   // 환영 + 프롬프트 (마지막)
+    make_user_proc("sh");
+    uart_puts("[ok] starting userspace shell\n");
 
     scheduler();    // RUNNABLE 프로세스를 선점형으로 실행 (돌아오지 않음)
 }

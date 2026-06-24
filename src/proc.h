@@ -13,7 +13,7 @@ struct context {
     uint64 s0, s1, s2, s3, s4, s5, s6, s7, s8, s9, s10, s11;
 };
 
-enum proc_state { UNUSED, RUNNABLE, RUNNING };
+enum proc_state { UNUSED, RUNNABLE, RUNNING, SLEEPING, ZOMBIE };
 
 struct regframe;  // trap.h
 
@@ -29,6 +29,8 @@ struct proc {
     int             pid;        // 프로세스 ID
     char           *ucode;      // 유저 코드 페이지(물리) — fork가 복사
     char           *ustack;     // 유저 스택 페이지(물리) — fork가 복사
+    void           *chan;       // SLEEPING일 때 기다리는 채널
+    struct proc    *parent;     // 부모(wait/exit용)
 };
 
 void         procinit(void);
@@ -36,6 +38,10 @@ struct proc *make_thread(void (*fn)(void), const char *name);
 struct proc *make_user_proc(const char *name);  // 유저 프로세스 생성(자체 주소공간)
 int          proc_fork(struct regframe *f);      // 현재 유저 프로세스를 복제(자식 pid 반환)
 int          proc_exec(const char *path);        // 현재 프로세스를 디스크의 ELF로 교체(실패 시 -1)
+void         proc_exit(void);       // 현재 프로세스 종료(ZOMBIE) + 부모 깨움
+int          proc_wait(void);       // 자식 하나가 종료할 때까지 대기(자식 pid 반환, 없으면 -1)
+void         sleep(void *chan);     // chan에서 잠들고 스케줄러에 양보
+void         wakeup(void *chan);    // chan에서 자는 모든 프로세스를 깨움
 void         scheduler(void);       // 돌아오지 않음
 void         yield(void);           // 타이머/자발적으로 스케줄러에 양보
 struct proc *current_proc(void);    // 현재 실행 중인 proc(없으면 0)

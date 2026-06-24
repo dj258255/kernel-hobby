@@ -1,12 +1,14 @@
 // user.c — 시스템콜 디스패치 (커널 측)
 //
-// 유저 프로그램은 이제 user/init.c로 따로 컴파일되어 ELF로 임베드된다.
-// 여기는 그 프로그램이 ecall로 부른 시스템콜을 처리하는 커널 측 핸들러다.
+// 유저 프로그램(셸 user/init.c, 디스크의 hello 등)이 ecall로 부른 시스템콜을
+// 처리하는 커널 측 핸들러.
 
 #include "user.h"
 #include "types.h"
 #include "uart.h"
-#include "proc.h"   // current_proc(), yield(), proc_fork()
+#include "proc.h"     // current_proc(), proc_fork/exec/exit/wait
+#include "console.h"  // console_read
+#include "fs.h"       // fs_ls, fs_cat
 
 #define SYS_putchar 1
 #define SYS_print   2
@@ -14,6 +16,19 @@
 #define SYS_exit    4
 #define SYS_fork    5
 #define SYS_exec    6
+#define SYS_read    7
+#define SYS_wait    8
+#define SYS_ls      9
+#define SYS_cat    10
+
+// 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
+static void copy_path(uint64 uptr, char *dst, int max) {
+    const char *u = (const char *)uptr;
+    int i = 0;
+    for (; i < max - 1 && u[i]; i++)
+        dst[i] = u[i];
+    dst[i] = 0;
+}
 
 void syscall(struct regframe *f) {
     switch (f->a7) {
@@ -29,24 +44,36 @@ void syscall(struct regframe *f) {
         f->a0 = 0;
         break;
     case SYS_tick:
-        current_proc()->counter++;  // ps에서 이 프로세스가 도는 게 보인다
+        current_proc()->counter++;
         break;
     case SYS_exit:
-        current_proc()->state = UNUSED;  // 스케줄러가 다시는 안 고름
-        yield();                         // 스케줄러로 영구 양보(돌아오지 않음)
+        proc_exit();   // ZOMBIE + 부모 깨움 (돌아오지 않음)
         break;
     case SYS_fork:
-        f->a0 = proc_fork(f);  // 부모 반환값 = 자식 pid (자식은 proc_fork가 0으로 세팅)
+        f->a0 = proc_fork(f);
         break;
     case SYS_exec: {
-        // a0 = 유저 공간의 경로 문자열 포인터. SUM으로 읽어 커널 버퍼에 복사.
         static char path[64];
-        const char *u = (const char *)f->a0;
-        int i = 0;
-        for (; i < 63 && u[i]; i++)
-            path[i] = u[i];
-        path[i] = 0;
-        f->a0 = (uint64)proc_exec(path);  // 성공 시 돌아오지 않음, 실패 시 -1
+        copy_path(f->a0, path, sizeof(path));
+        f->a0 = (uint64)proc_exec(path);  // 성공 시 돌아오지 않음
+        break;
+    }
+    case SYS_read:
+        // a0 = 유저 버퍼(VA, SUM으로 씀), a1 = 최대 길이
+        f->a0 = (uint64)console_read((char *)f->a0, (int)f->a1);
+        break;
+    case SYS_wait:
+        f->a0 = (uint64)proc_wait();
+        break;
+    case SYS_ls:
+        fs_ls();
+        f->a0 = 0;
+        break;
+    case SYS_cat: {
+        static char path[64];
+        copy_path(f->a0, path, sizeof(path));
+        fs_cat(path);
+        f->a0 = 0;
         break;
     }
     default:

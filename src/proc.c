@@ -158,6 +158,7 @@ int proc_fork(struct regframe *f) {
         child->is_user = 1;
         child->counter = 0;
         child->fn = 0;
+        child->parent = parent;   // wait/exit용
         child->pid = next_pid++;
         int j = 0;
         for (; parent->name[j] && j < 6; j++) child->name[j] = parent->name[j];
@@ -207,6 +208,7 @@ int proc_exec(const char *path) {
 // 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.
 void scheduler(void) {
     for (;;) {
+        int ran = 0;
         for (int i = 0; i < NPROC; i++) {
             struct proc *p = &proctable[i];
             if (p->state == RUNNABLE) {
@@ -216,7 +218,15 @@ void scheduler(void) {
                 swtch(&sched_context, &p->context);  // p 실행 → yield 시 복귀
                 cur = 0;
                 switch_satp(kernel_pt());            // 커널 주소공간으로 복귀
+                ran = 1;
             }
+        }
+        if (!ran) {
+            // 돌릴 게 없으면(모두 SLEEPING 등) 인터럽트를 켜고 쉰다.
+            // 콘솔/타이머 인터럽트가 누군가를 깨우면 다시 돈다.
+            intr_on();
+            asm volatile("wfi");
+            intr_off();
         }
     }
 }
@@ -229,6 +239,59 @@ void yield(void) {
     if (p->state == RUNNING)
         p->state = RUNNABLE;
     swtch(&p->context, &sched_context);  // 스케줄러로
+}
+
+// chan에서 잠든다: 상태를 SLEEPING으로 두고 스케줄러에 양보.
+// 트랩 처리 중(SIE=0)이라 "검사→sleep"이 원자적 → 잃어버린 wakeup 없음.
+void sleep(void *chan) {
+    struct proc *p = cur;
+    if (!p)
+        return;
+    p->chan = chan;
+    p->state = SLEEPING;
+    swtch(&p->context, &sched_context);  // 깨어날 때까지 스케줄러로
+    p->chan = 0;                         // 다시 스케줄되면 여기서 재개
+}
+
+// chan에서 자는 모든 프로세스를 RUNNABLE로.
+void wakeup(void *chan) {
+    for (int i = 0; i < NPROC; i++) {
+        struct proc *p = &proctable[i];
+        if (p->state == SLEEPING && p->chan == chan)
+            p->state = RUNNABLE;
+    }
+}
+
+// 현재 프로세스를 종료(ZOMBIE)하고 부모를 깨운다. 돌아오지 않는다.
+void proc_exit(void) {
+    struct proc *p = cur;
+    if (p->parent)
+        wakeup(p->parent);   // wait 중인 부모 깨우기
+    p->state = ZOMBIE;
+    swtch(&p->context, &sched_context);  // 스케줄러로(다신 안 돌아옴)
+}
+
+// 자식 하나가 종료할 때까지 기다린다. 종료한 자식을 회수하고 그 pid 반환.
+int proc_wait(void) {
+    struct proc *p = cur;
+    for (;;) {
+        int kids = 0;
+        for (int i = 0; i < NPROC; i++) {
+            struct proc *q = &proctable[i];
+            if (q->parent != p)
+                continue;
+            kids = 1;
+            if (q->state == ZOMBIE) {
+                int pid = q->pid;
+                q->state = UNUSED;  // 회수(자원은 누수 — 학습 커널)
+                q->parent = 0;
+                return pid;
+            }
+        }
+        if (!kids)
+            return -1;        // 자식 없음
+        sleep(p);             // 자식이 exit하며 wakeup(p)할 때까지
+    }
 }
 
 void proc_dump(void) {
