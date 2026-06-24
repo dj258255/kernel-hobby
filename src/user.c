@@ -9,6 +9,7 @@
 #include "proc.h"     // current_proc(), proc_fork/exec/exit/wait
 #include "console.h"  // console_read
 #include "fs.h"       // fs_ls, fs_cat
+#include "kalloc.h"   // kfreecount
 
 #define SYS_putchar 1
 #define SYS_print   2
@@ -20,6 +21,7 @@
 #define SYS_wait    8
 #define SYS_ls      9
 #define SYS_cat    10
+#define SYS_mem    11
 
 // 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
 static void copy_path(uint64 uptr, char *dst, int max) {
@@ -67,6 +69,14 @@ void syscall(struct regframe *f) {
         break;
     case SYS_ls:
         fs_ls();
+        f->a0 = 0;
+        break;
+    case SYS_mem:
+        uart_puts("free pages: ");
+        uart_dec(kfreecount());
+        uart_puts("  (~");
+        uart_dec(kfreecount() * 4096 / 1024 / 1024);
+        uart_puts(" MB)\n");
         f->a0 = 0;
         break;
     case SYS_cat: {

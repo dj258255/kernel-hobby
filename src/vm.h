@@ -28,5 +28,7 @@ pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa);
 pagetable_t kernel_pt(void);             // 커널 페이지 테이블
 void        switch_satp(pagetable_t pt); // satp 전환 + TLB flush
 uint64      satp_for(pagetable_t pt);    // 페이지 테이블의 satp 값(Sv39)
+void        remap_user_code(pagetable_t pt, uint64 newcode_pa);  // exec: 코드 페이지 교체
+void        free_pagetable(pagetable_t pt);  // 페이지 테이블 구조 회수
 
 #endif

@@ -13,6 +13,7 @@
 #define SYS_wait    8
 #define SYS_ls      9
 #define SYS_cat    10
+#define SYS_mem    11
 
 // a7=콜 번호, a0=인자/반환값. ecall로 S-mode 트랩을 일으킨다.
 static inline long __syscall(long num, long arg0) {
@@ -37,6 +38,7 @@ static inline long sys_read(char *buf, long n)  { return __syscall2(SYS_read, (l
 static inline long sys_wait(void)               { return __syscall(SYS_wait, 0); }
 static inline void sys_ls(void)                 { __syscall(SYS_ls, 0); }
 static inline void sys_cat(const char *p)       { __syscall(SYS_cat, (long)p); }
+static inline void sys_mem(void)                { __syscall(SYS_mem, 0); }
 static inline void sys_print(long who)          { __syscall(SYS_print, who); }
 static inline void sys_tick(void)               { __syscall(SYS_tick, 0); }
 static inline void sys_exit(void)               { __syscall(SYS_exit, 0); }

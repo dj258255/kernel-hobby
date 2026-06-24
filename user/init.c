@@ -46,11 +46,15 @@ void _start(void) {
 
         // 내장 명령
         if (streq(line, "help")) {
-            puts("builtins: ls, cat <file>, help.  others run as disk programs.\n");
+            puts("builtins: ls, cat <file>, mem, help.  others run as disk programs.\n");
             continue;
         }
         if (streq(line, "ls")) {
             sys_ls();
+            continue;
+        }
+        if (streq(line, "mem")) {
+            sys_mem();
             continue;
         }
         if (startswith(line, "cat ")) {

@@ -158,6 +158,7 @@ int proc_fork(struct regframe *f) {
         child->is_user = 1;
         child->counter = 0;
         child->fn = 0;
+        child->kstack = 0;        // forkret은 유저 스택에서 진입(커널 스택 불필요)
         child->parent = parent;   // wait/exit용
         child->pid = next_pid++;
         int j = 0;
@@ -171,6 +172,8 @@ int proc_fork(struct regframe *f) {
 }
 
 // 현재 프로세스를 디스크의 ELF 프로그램으로 교체한다(exec).
+// 페이지 테이블과 스택은 재사용하고 코드 페이지만 갈아끼운다 → satp 전환이
+// 없어 스택이 안 바뀌고, 옛 코드 페이지는 회수되어 누수가 없다.
 // 성공하면 새 프로그램으로 진입해 돌아오지 않는다. 실패 시 -1.
 int proc_exec(const char *path) {
     static uint8 elfbuf[8192];   // 커널 메모리(식별 매핑)
@@ -179,30 +182,40 @@ int proc_exec(const char *path) {
     if (sz < 0)
         return -1;
 
-    char *code = kalloc();
-    zero(code, PGSIZE);
+    char *newcode = kalloc();
+    zero(newcode, PGSIZE);
     uint64 entry;
-    if (load_elf((const char *)elfbuf, code, &entry) != 0)
+    if (load_elf((const char *)elfbuf, newcode, &entry) != 0) {
+        kfree(newcode);
         return -1;
-    char *ustack = kalloc();
-    pagetable_t newpt = proc_pagetable((uint64)code, (uint64)ustack);
+    }
 
-    // 현재 프로세스를 새 이미지로 교체(옛 페이지/테이블은 누수 — 학습 커널)
     struct proc *p = cur;
-    p->ucode = code;
-    p->ustack = ustack;
-    p->pagetable = newpt;
+    char *oldcode = p->ucode;
+    remap_user_code(p->pagetable, (uint64)newcode);  // USERVA → 새 코드
+    p->ucode = newcode;
+    if (oldcode)
+        kfree(oldcode);                              // 옛 코드 회수(누수 없음)
 
-    // U-mode 진입 준비. sstatus는 CSR라 satp 전환 전에 설정해도 안전.
+    // U-mode 진입. satp(주소공간)는 그대로라 스택이 안 바뀐다 → 스택 재사용.
     uint64 s = r_sstatus();
     s &= ~SSTATUS_SPP;   // U-mode로
     s |= SSTATUS_SPIE;   // 인터럽트 enable
     s |= SSTATUS_SUM;
     w_sstatus(s);
-
-    // satp 전환 + sret을 스택 안 건드리고 수행(어셈블리). 돌아오지 않는다.
-    userret_to(entry, (uint64)USERSTACKTOP, satp_for(newpt));
+    w_sepc(entry);
+    asm volatile("mv sp, %0\n sret\n" :: "r"((uint64)USERSTACKTOP));
     return -1;  // 도달하지 않음
+}
+
+// 프로세스의 자원을 회수한다(유저 페이지 + 커널 스택 + 페이지 테이블 구조).
+void proc_freeimage(struct proc *p) {
+    if (p->ucode)  kfree(p->ucode);
+    if (p->ustack) kfree(p->ustack);
+    if (p->kstack) kfree(p->kstack);
+    if (p->pagetable) free_pagetable(p->pagetable);
+    p->ucode = p->ustack = p->kstack = 0;
+    p->pagetable = 0;
 }
 
 // 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.
@@ -283,8 +296,9 @@ int proc_wait(void) {
             kids = 1;
             if (q->state == ZOMBIE) {
                 int pid = q->pid;
-                q->state = UNUSED;  // 회수(자원은 누수 — 학습 커널)
+                proc_freeimage(q);  // 유저 페이지 + 페이지 테이블 회수
                 q->parent = 0;
+                q->state = UNUSED;
                 return pid;
             }
         }

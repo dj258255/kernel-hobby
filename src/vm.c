@@ -116,6 +116,33 @@ void switch_satp(pagetable_t pt) {
     sfence_vma();
 }
 
+// exec용: USERVA의 코드 페이지만 새 물리 페이지로 갈아끼운다(스택/테이블 재사용).
+void remap_user_code(pagetable_t pt, uint64 newcode_pa) {
+    pte_t *pte = walk(pt, USERVA, 0);
+    if (pte == 0) {
+        uart_puts("[vm] remap_user_code: no pte\n");
+        return;
+    }
+    *pte = PA2PTE(newcode_pa) | PTE_R | PTE_X | PTE_U | PTE_V;
+    sfence_vma();
+}
+
+// 페이지 테이블 "구조"(중간 노드들)만 회수한다. leaf가 가리키는 데이터 페이지는
+// 건드리지 않는다(커널 공유 페이지이거나, 유저 페이지는 호출자가 따로 free).
+static void freewalk(pagetable_t pt) {
+    for (int i = 0; i < 512; i++) {
+        pte_t pte = pt[i];
+        if ((pte & PTE_V) && (pte & (PTE_R | PTE_W | PTE_X)) == 0) {
+            freewalk((pagetable_t)PTE2PA(pte));  // 중간 노드 → 재귀
+            pt[i] = 0;
+        }
+        // leaf(R/W/X 있음)는 데이터 페이지 → 그대로 둔다
+    }
+    kfree((void *)pt);
+}
+
+void free_pagetable(pagetable_t pt) { freewalk(pt); }
+
 // 프로세스별 페이지 테이블: 커널 식별 매핑 + 유저 코드(U|R|X) + 유저 스택(U|R|W).
 pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa) {
     pagetable_t pt = (pagetable_t)kalloc();
