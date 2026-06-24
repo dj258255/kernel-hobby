@@ -23,6 +23,7 @@
 #define SYS_cat    10
 #define SYS_mem    11
 #define SYS_sbrk   12
+#define SYS_mmap   13
 
 // 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
 static void copy_path(uint64 uptr, char *dst, int max) {
@@ -75,6 +76,12 @@ void syscall(struct regframe *f) {
     case SYS_sbrk:
         f->a0 = proc_sbrk((int)f->a0);  // 이전 heap_top 반환(지연 할당)
         break;
+    case SYS_mmap: {
+        static char path[64];
+        copy_path(f->a0, path, sizeof(path));
+        f->a0 = proc_mmap(path);        // 베이스 VA(폴트 시 파일 적재)
+        break;
+    }
     case SYS_mem:
         uart_puts("free pages: ");
         uart_dec(kfreecount());

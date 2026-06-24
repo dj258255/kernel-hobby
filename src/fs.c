@@ -80,6 +80,36 @@ int fs_read(const char *name, unsigned char *buf, int max) {
     return -1;
 }
 
+// 파일 메타데이터(시작 블록, 크기). 찾으면 0, 없으면 -1.
+int fs_stat(const char *name, unsigned *start_block, unsigned *size) {
+    if (!mounted) return -1;
+    for (int i = 0; i < nfiles; i++) {
+        if (!streq(dir[i].name, name))
+            continue;
+        *start_block = dir[i].start;
+        *size = dir[i].size;
+        return 0;
+    }
+    return -1;
+}
+
+// 파일의 offset(페이지 정렬)부터 한 페이지(BSIZE*8=4096B)를 buf로. 파일 끝 너머는 0.
+void fs_read_page(unsigned start_block, unsigned size, unsigned offset, unsigned char *buf) {
+    for (int i = 0; i < 4096; i++)
+        buf[i] = 0;                       // 0으로 채우고
+    unsigned blk = start_block + offset / BSIZE;
+    unsigned done = 0;
+    while (done < 4096 && offset + done < size) {
+        virtio_disk_rw(blk, fsbuf, 0);
+        unsigned n = size - (offset + done);
+        if (n > BSIZE) n = BSIZE;
+        for (unsigned j = 0; j < n; j++)
+            buf[done + j] = fsbuf[j];
+        done += BSIZE;
+        blk++;
+    }
+}
+
 void fs_cat(const char *name) {
     if (!mounted) { uart_puts("cat: no filesystem\n"); return; }
     for (int i = 0; i < nfiles; i++) {

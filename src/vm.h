@@ -18,7 +18,8 @@ typedef uint64 *pagetable_t;
 #define USERVA        0x1000L   // 유저 코드 진입점
 #define USERSTACK     0x4000L   // 유저 스택(1페이지)
 #define USERSTACKTOP  (USERSTACK + 4096)
-#define HEAPBASE      0x10000L  // 힙 시작(sbrk로 위로 성장, 페이지는 폴트 시 할당)
+#define HEAPBASE      0x10000L   // 힙 시작(sbrk로 위로 성장, 페이지는 폴트 시 할당)
+#define MMAPBASE      0x100000L  // mmap 영역 시작(파일을 폴트 시 적재)
 
 void kvminit(void);      // 커널 페이지 테이블 생성 + 매핑
 void kvminithart(void);  // satp에 커널 페이지 테이블 적재(페이징 ON)
