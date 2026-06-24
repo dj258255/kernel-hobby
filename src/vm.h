@@ -18,6 +18,7 @@ typedef uint64 *pagetable_t;
 #define USERVA        0x1000L   // 유저 코드 진입점
 #define USERSTACK     0x4000L   // 유저 스택(1페이지)
 #define USERSTACKTOP  (USERSTACK + 4096)
+#define HEAPBASE      0x10000L  // 힙 시작(sbrk로 위로 성장, 페이지는 폴트 시 할당)
 
 void kvminit(void);      // 커널 페이지 테이블 생성 + 매핑
 void kvminithart(void);  // satp에 커널 페이지 테이블 적재(페이징 ON)
@@ -30,5 +31,7 @@ void        switch_satp(pagetable_t pt); // satp 전환 + TLB flush
 uint64      satp_for(pagetable_t pt);    // 페이지 테이블의 satp 값(Sv39)
 void        remap_user_code(pagetable_t pt, uint64 newcode_pa);  // exec: 코드 페이지 교체
 void        free_pagetable(pagetable_t pt);  // 페이지 테이블 구조 회수
+int         uvm_map(pagetable_t pt, uint64 va, uint64 pa, int perm);  // 유저 1페이지 매핑
+void        vm_free_range(pagetable_t pt, uint64 start, uint64 end);  // VA 범위의 매핑 페이지 해제
 
 #endif

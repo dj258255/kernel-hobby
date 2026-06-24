@@ -22,6 +22,7 @@
 #define SYS_ls      9
 #define SYS_cat    10
 #define SYS_mem    11
+#define SYS_sbrk   12
 
 // 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
 static void copy_path(uint64 uptr, char *dst, int max) {
@@ -70,6 +71,9 @@ void syscall(struct regframe *f) {
     case SYS_ls:
         fs_ls();
         f->a0 = 0;
+        break;
+    case SYS_sbrk:
+        f->a0 = proc_sbrk((int)f->a0);  // 이전 heap_top 반환(지연 할당)
         break;
     case SYS_mem:
         uart_puts("free pages: ");

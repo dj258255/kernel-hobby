@@ -110,6 +110,7 @@ struct proc *make_user_proc(const char *name) {
         p->counter = 0;
         p->fn = 0;
         p->pid = next_pid++;
+        p->heap_top = HEAPBASE;
         p->kstack = kalloc();                          // 커널 스택(enter_user 실행용)
         zero(&p->context, sizeof(p->context));
         p->context.ra = (uint64)enter_user;            // 첫 swtch는 enter_user로
@@ -160,6 +161,7 @@ int proc_fork(struct regframe *f) {
         child->fn = 0;
         child->kstack = 0;        // forkret은 유저 스택에서 진입(커널 스택 불필요)
         child->parent = parent;   // wait/exit용
+        child->heap_top = parent->heap_top;  // (힙 페이지 복사는 생략 — 셸은 힙 미사용)
         child->pid = next_pid++;
         int j = 0;
         for (; parent->name[j] && j < 6; j++) child->name[j] = parent->name[j];
@@ -176,7 +178,7 @@ int proc_fork(struct regframe *f) {
 // 없어 스택이 안 바뀌고, 옛 코드 페이지는 회수되어 누수가 없다.
 // 성공하면 새 프로그램으로 진입해 돌아오지 않는다. 실패 시 -1.
 int proc_exec(const char *path) {
-    static uint8 elfbuf[8192];   // 커널 메모리(식별 매핑)
+    static uint8 elfbuf[32768];  // 커널 메모리(식별 매핑). ELF는 -g라 다소 큼.
 
     int sz = fs_read(path, elfbuf, sizeof(elfbuf));
     if (sz < 0)
@@ -192,6 +194,8 @@ int proc_exec(const char *path) {
 
     struct proc *p = cur;
     char *oldcode = p->ucode;
+    vm_free_range(p->pagetable, HEAPBASE, p->heap_top);  // 옛 프로그램 힙 회수
+    p->heap_top = HEAPBASE;                          // 새 프로그램은 빈 힙
     remap_user_code(p->pagetable, (uint64)newcode);  // USERVA → 새 코드
     p->ucode = newcode;
     if (oldcode)
@@ -208,14 +212,51 @@ int proc_exec(const char *path) {
     return -1;  // 도달하지 않음
 }
 
-// 프로세스의 자원을 회수한다(유저 페이지 + 커널 스택 + 페이지 테이블 구조).
+// 프로세스의 자원을 회수한다(유저 페이지 + 힙 + 커널 스택 + 페이지 테이블 구조).
 void proc_freeimage(struct proc *p) {
+    if (p->pagetable)
+        vm_free_range(p->pagetable, HEAPBASE, p->heap_top);  // 지연 할당된 힙 페이지
     if (p->ucode)  kfree(p->ucode);
     if (p->ustack) kfree(p->ustack);
     if (p->kstack) kfree(p->kstack);
     if (p->pagetable) free_pagetable(p->pagetable);
     p->ucode = p->ustack = p->kstack = 0;
     p->pagetable = 0;
+    p->heap_top = HEAPBASE;
+}
+
+// sbrk: 힙을 n바이트 키운다. 물리 페이지는 할당하지 않는다(지연 할당).
+// 이전 heap_top을 반환(새로 얻은 영역의 시작 주소).
+uint64 proc_sbrk(int n) {
+    struct proc *p = cur;
+    uint64 old = p->heap_top;
+    if (n > 0)
+        p->heap_top += (uint64)n;   // 성장만 지원(축소 생략)
+    return old;
+}
+
+// 페이지 폴트 처리: 폴트 주소가 힙 영역이면 페이지를 그제서야 할당(demand paging).
+// 처리하면 1(명령 재시도), 우리 영역이 아니면 0.
+int proc_pagefault(uint64 va, int store) {
+    (void)store;
+    struct proc *p = cur;
+    if (!p || !p->is_user)
+        return 0;
+    uint64 a = va & ~(uint64)(PGSIZE - 1);          // 페이지 정렬
+    if (a < HEAPBASE || a >= p->heap_top)
+        return 0;                                    // 힙 밖 → 진짜 폴트
+    char *mem = kalloc();
+    if (!mem)
+        return 0;
+    zero(mem, PGSIZE);
+    if (uvm_map(p->pagetable, a, (uint64)mem, PTE_R | PTE_W | PTE_U) != 0) {
+        kfree(mem);
+        return 0;
+    }
+    uart_puts("[pagefault] demand-allocated a heap page at va=");
+    uart_hex(a);
+    uart_putc('\n');
+    return 1;
 }
 
 // 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.

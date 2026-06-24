@@ -143,6 +143,25 @@ static void freewalk(pagetable_t pt) {
 
 void free_pagetable(pagetable_t pt) { freewalk(pt); }
 
+// 유저 페이지 1장을 매핑하고 TLB flush(페이지 폴트 핸들러가 호출).
+int uvm_map(pagetable_t pt, uint64 va, uint64 pa, int perm) {
+    if (mappages(pt, va, PGSIZE, pa, perm) != 0)
+        return -1;
+    sfence_vma();
+    return 0;
+}
+
+// [start, end) 범위에 매핑된 유저 페이지들을 해제(힙 회수용).
+void vm_free_range(pagetable_t pt, uint64 start, uint64 end) {
+    for (uint64 a = start; a < end; a += PGSIZE) {
+        pte_t *pte = walk(pt, a, 0);
+        if (pte && (*pte & PTE_V)) {
+            kfree((void *)PTE2PA(*pte));
+            *pte = 0;
+        }
+    }
+}
+
 // 프로세스별 페이지 테이블: 커널 식별 매핑 + 유저 코드(U|R|X) + 유저 스택(U|R|W).
 pagetable_t proc_pagetable(uint64 ucode_pa, uint64 ustack_pa) {
     pagetable_t pt = (pagetable_t)kalloc();

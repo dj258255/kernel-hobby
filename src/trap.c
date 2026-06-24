@@ -14,6 +14,8 @@ extern void kernelvec(void);  // kernelvec.S
 #define TIMER_INTERVAL 1000000UL
 #define SCAUSE_S_EXTERNAL 9   // 인터럽트 코드 9 = S-mode 외부 인터럽트
 #define SCAUSE_U_ECALL    8   // 예외 코드 8 = U-mode에서의 ecall(시스템콜)
+#define SCAUSE_LOAD_FAULT 13  // 예외 13 = 로드 페이지 폴트
+#define SCAUSE_STORE_FAULT 15 // 예외 15 = 스토어/AMO 페이지 폴트
 
 static uint64 ticks = 0;
 
@@ -64,6 +66,9 @@ void kerneltrap(struct regframe *f) {
         // 유저 프로그램이 ecall로 커널에 '부탁'한 것 = 시스템콜.
         syscall(f);
         f->sepc += 4;  // ecall(4바이트) 다음 명령으로 복귀(프레임의 sepc 수정)
+    } else if ((cause == SCAUSE_LOAD_FAULT || cause == SCAUSE_STORE_FAULT) &&
+               proc_pagefault(r_stval(), cause == SCAUSE_STORE_FAULT)) {
+        // 힙 페이지 폴트를 지연 할당으로 처리. sepc는 그대로 → 명령 재시도.
     } else {
         // 예외 — 정보를 찍고 멈춘다(디버깅용 안전망)
         uart_puts("[trap] EXCEPTION  scause=");
