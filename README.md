@@ -2,6 +2,8 @@
 
 **한국어** | [English](README.en.md)
 
+![hobby-kernel 유저공간 셸 데모](docs/demo.svg)
+
 C로 바닥부터 만드는 **RISC-V 학습용 커널**. OS 내부(유저/커널 경계·시스템콜·프로세스·파일시스템)를 직접 구현하며 공부하는 게 목표. 참고서로 [xv6(MIT 6.S081)](https://pdos.csail.mit.edu/6.828/2023/xv6.html)를 본다.
 
 ## 빌드 & 실행
