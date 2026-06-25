@@ -106,7 +106,11 @@ static int eq4(const uint8 *a, const uint8 *b) {
 
 // ---- 바이트오더/직렬화 헬퍼(네트워크=빅엔디안) ----
 static void put16(uint8 *p, uint16 v) { p[0] = v >> 8; p[1] = v; }
+static void put32(uint8 *p, uint32 v) { p[0]=v>>24; p[1]=v>>16; p[2]=v>>8; p[3]=v; }
 static uint16 get16(const uint8 *p) { return ((uint16)p[0] << 8) | p[1]; }
+static uint32 get32(const uint8 *p) {
+    return ((uint32)p[0]<<24)|((uint32)p[1]<<16)|((uint32)p[2]<<8)|p[3];
+}
 
 // 16비트 1의 보수 체크섬(IP/ICMP/UDP 공용)
 static uint16 cksum(const uint8 *data, int len) {
@@ -472,6 +476,124 @@ static int icmp_ping(const uint8 *next_mac, const uint8 *dst_ip) {
             return 0;
     }
     return -1;
+}
+
+// ---- TCP (능동 개방 클라이언트) ----
+#define IP_TCP 6
+#define TH_FIN 0x01
+#define TH_SYN 0x02
+#define TH_RST 0x04
+#define TH_PSH 0x08
+#define TH_ACK 0x10
+
+// TCP 세그먼트 하나 전송(IP+TCP 헤더 빌드, 의사헤더 체크섬).
+static int tcp_send(const uint8 *mac, const uint8 *dip, uint16 sport, uint16 dport,
+                    uint32 seq, uint32 ack, uint8 flags, const uint8 *data, int dlen) {
+    uint8 pkt[BUFSZ];
+    int tcplen = 20 + dlen;
+    int iplen = 20 + tcplen;
+    pkt[0] = 0x45; pkt[1] = 0;
+    put16(pkt + 2, iplen);
+    put16(pkt + 4, 0); put16(pkt + 6, 0);
+    pkt[8] = 64; pkt[9] = IP_TCP; put16(pkt + 10, 0);
+    copy(pkt + 12, MY_IP, 4); copy(pkt + 16, dip, 4);
+    put16(pkt + 10, cksum(pkt, 20));
+    uint8 *t = pkt + 20;
+    put16(t + 0, sport); put16(t + 2, dport);
+    put32(t + 4, seq); put32(t + 8, ack);
+    t[12] = (5 << 4); t[13] = flags;       // data offset=5(20B), flags
+    put16(t + 14, 64240);                  // window
+    put16(t + 16, 0); put16(t + 18, 0);    // checksum, urgent
+    for (int i = 0; i < dlen; i++) t[20 + i] = data[i];
+    // TCP 체크섬(의사헤더 포함)
+    uint32 sum = 0;
+    sum += get16(MY_IP) + get16(MY_IP + 2) + get16(dip) + get16(dip + 2);
+    sum += IP_TCP + tcplen;
+    for (int i = 0; i + 1 < tcplen; i += 2) sum += get16(t + i);
+    if (tcplen & 1) sum += (uint16)t[tcplen - 1] << 8;
+    while (sum >> 16) sum = (sum & 0xffff) + (sum >> 16);
+    put16(t + 16, ~sum & 0xffff);
+    return eth_tx(mac, ETH_IP, pkt, iplen);
+}
+
+// 우리 포트(want_port)로 온 TCP 세그먼트 하나 수신. payload 길이 반환(-1=타임아웃).
+// seq/ack/flags와 상대(MAC/IP/포트)를 채운다. 그 사이 온 ARP 요청은 응답.
+static int tcp_recv(uint16 want_port, uint8 *pmac, uint8 *pip, uint16 *pport,
+                    uint32 *seq, uint32 *ack, uint8 *flags, uint8 *out, int max) {
+    uint8 fr[BUFSZ];
+    for (uint64 spin = 0; spin < 800000000ULL; spin++) {
+        int len = eth_rx(fr, sizeof(fr));
+        if (len <= 0) { if (len < 0) return -1; continue; }
+        if (get16(fr + 12) == ETH_ARP) { arp_maybe_reply(fr, len); continue; }
+        if (get16(fr + 12) != ETH_IP) continue;
+        const uint8 *ip = fr + 14;
+        if ((ip[0] >> 4) != 4 || ip[9] != IP_TCP) continue;
+        int ihl = (ip[0] & 0xf) * 4;
+        const uint8 *t = ip + ihl;
+        if (get16(t + 2) != want_port) continue;     // 우리 포트로 온 것만
+        if (pmac) copy(pmac, fr + 6, 6);             // 상대 MAC(이더넷 src)
+        if (pip) copy(pip, ip + 12, 4);              // 상대 IP(src)
+        if (pport) *pport = get16(t + 0);            // 상대 포트(src)
+        *seq = get32(t + 4); *ack = get32(t + 8); *flags = t[13];
+        int doff = (t[12] >> 4) * 4;
+        int dlen = get16(ip + 2) - ihl - doff;
+        if (dlen < 0) dlen = 0;
+        if (dlen > max) dlen = max;
+        copy(out, t + doff, dlen);
+        return dlen;
+    }
+    return -1;
+}
+
+// 데모(수동 개방=서버): :5599에서 한 연결을 받아 3-way 핸드셰이크 → 데이터 수신 →
+// 에코 송신 → 종료. 호스트가 hostfwd로 접속한다(SLIRP가 호스트→게스트로 넘겨줌).
+void net_tcp_demo(void) {
+    if (!net_ok) return;
+    uint16 myport = 5599;
+    uint8 pmac[6], pip[4]; uint16 pport = 0;
+    uint32 rseq, rack; uint8 fl; uint8 buf[BUFSZ];
+
+    uart_puts("[tcp] listening on :5599 (waiting for host connect) ... ");
+
+    // 1) SYN 대기
+    int n;
+    for (;;) {
+        n = tcp_recv(myport, pmac, pip, &pport, &rseq, &rack, &fl, buf, sizeof(buf));
+        if (n < 0) { uart_puts("timeout (no connect)\n"); return; }
+        if (fl & TH_SYN) break;
+    }
+    uint32 cliseq = rseq;
+    uart_puts("SYN from "); print_ip(pip); uart_putc('\n');
+
+    // 2) SYN-ACK (우리 ISN=20000, SYN이 seq 1 소비)
+    uint32 myseq = 20000;
+    tcp_send(pmac, pip, myport, pport, myseq, cliseq + 1, TH_SYN | TH_ACK, 0, 0);
+    myseq += 1;
+    uint32 cliack = cliseq + 1;   // 상대로부터 다음에 기대하는 seq
+
+    // 3) 핸드셰이크 ACK + 데이터 수신(데이터가 올 때까지)
+    for (int tries = 0; tries < 12; tries++) {
+        n = tcp_recv(myport, 0, 0, 0, &rseq, &rack, &fl, buf, sizeof(buf));
+        if (n < 0) { uart_puts("[tcp] no data\n"); return; }
+        if (n > 0) {
+            uart_puts("[tcp] recv: ");
+            for (int i = 0; i < n; i++) uart_putc((char)buf[i]);
+            if (buf[n - 1] != '\n') uart_putc('\n');
+            cliack = rseq + n;
+            // 4) 에코 송신(받은 데이터를 그대로) + ACK
+            tcp_send(pmac, pip, myport, pport, myseq, cliack, TH_PSH | TH_ACK, buf, n);
+            myseq += n;
+            break;
+        }
+        if (fl & TH_FIN) { cliack = rseq + 1; break; }
+    }
+
+    // 5) 종료: FIN 보내고 상대 ACK/FIN 처리
+    tcp_send(pmac, pip, myport, pport, myseq, cliack, TH_FIN | TH_ACK, 0, 0);
+    n = tcp_recv(myport, 0, 0, 0, &rseq, &rack, &fl, buf, sizeof(buf));
+    if (n >= 0 && (fl & TH_FIN))
+        tcp_send(pmac, pip, myport, pport, myseq + 1, rseq + 1, TH_ACK, 0, 0);
+    uart_puts("[ok] tcp: accept + handshake + echo + close done\n");
 }
 
 // ---- 부팅 데모 ----

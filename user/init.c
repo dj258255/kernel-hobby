@@ -62,6 +62,10 @@ void _start(void) {
             sys_mem();
             continue;
         }
+        if (streq(line, "tcp")) {
+            sys_tcp();
+            continue;
+        }
         if (startswith(line, "cat ")) {
             sys_cat(line + 4);
             continue;

@@ -18,6 +18,7 @@
 #define SYS_mmap   13
 #define SYS_create 14
 #define SYS_rm     15
+#define SYS_tcp    16
 
 // a7=콜 번호, a0=인자/반환값. ecall로 S-mode 트랩을 일으킨다.
 static inline long __syscall(long num, long arg0) {
@@ -47,6 +48,7 @@ static inline long sys_sbrk(long n)             { return __syscall(SYS_sbrk, n);
 static inline long sys_mmap(const char *p)      { return __syscall(SYS_mmap, (long)p); }
 static inline long sys_create(const char *name, const char *data) { return __syscall2(SYS_create, (long)name, (long)data); }
 static inline long sys_rm(const char *name)     { return __syscall(SYS_rm, (long)name); }
+static inline void sys_tcp(void)                { __syscall(SYS_tcp, 0); }
 static inline void sys_print(long who)          { __syscall(SYS_print, who); }
 static inline void sys_tick(void)               { __syscall(SYS_tick, 0); }
 static inline void sys_exit(void)               { __syscall(SYS_exit, 0); }

@@ -10,4 +10,7 @@ int  net_init(void);
 // 부팅 시 연결성 데모: 게이트웨이 MAC을 ARP로 알아내고, DNS로 도메인을 해석한다.
 void net_demo(void);
 
+// TCP 데모: 10.0.2.2:5599에 접속해 핸드셰이크→데이터→에코 수신→종료(셸 tcp 명령).
+void net_tcp_demo(void);
+
 #endif

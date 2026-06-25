@@ -10,6 +10,7 @@
 #include "console.h"  // console_read
 #include "fs.h"       // fs_ls, fs_cat
 #include "kalloc.h"   // kfreecount
+#include "net.h"      // net_tcp_demo
 
 #define SYS_putchar 1
 #define SYS_print   2
@@ -26,6 +27,7 @@
 #define SYS_mmap   13
 #define SYS_create 14
 #define SYS_rm     15
+#define SYS_tcp    16
 
 // 유저 공간의 문자열(a0이 가리키는)을 커널 버퍼로 복사(SUM으로 읽기).
 static void copy_path(uint64 uptr, char *dst, int max) {
@@ -114,6 +116,10 @@ void syscall(struct regframe *f) {
         f->a0 = (uint64)fs_delete(name);
         break;
     }
+    case SYS_tcp:
+        net_tcp_demo();
+        f->a0 = 0;
+        break;
     default:
         uart_puts("[syscall] unknown number\n");
         f->a0 = (uint64)-1;
