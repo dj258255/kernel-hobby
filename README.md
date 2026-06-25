@@ -57,6 +57,30 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | lock | 병렬성·락(멀티코어 SMP) | 완료 — 3코어가 공유 proctable에서 동시 스케줄. 락 baton(swtch 가로지르며 전달), `sscratch`로 hartid 복구, kalloc·콘솔·uart 락. (fs 락은 정제) |
 | net | 네트워크 스택 | 완료 — virtio-net + 이더넷/ARP/IP/UDP/ICMP/DNS + **TCP**. ARP로 게이트웨이 MAC 해석, ICMP ping 왕복, DNS 질의(외부망 필요), TCP 서버(3-way 핸드셰이크/데이터/에코/종료, 셸 `tcp`) |
 
+> xv6 6.1810 랩(util/syscall/pgtbl/traps/lazy/mmap/fs/cow/thread/lock/net)은 **전부 완료**.
+
+## 다음 로드맵 (더 배울 것)
+
+xv6 입문 랩을 넘어, 이 토이 커널에 더 붙여볼 만한 주제들. (우선순위·난이도 메모)
+
+| 주제 | 무엇을 / 왜 | 난이도 |
+|---|---|---|
+| **IPC: 파이프 + 시그널** | 셸 파이프라인(`ls \| cat`) + 비동기 시그널(Ctrl-C, `SIGALRM`). 시그널로 **uthread를 선점형으로** 전환 가능 → 협조 vs 선점 직접 비교. 지금까지 만든 것과 가장 잘 엮임 | 중 |
+| **MLFQ 스케줄러** | 단순 round-robin → 다단계 피드백 큐(우선순위 + aging). 대화형 응답성↑ | 중 |
+| **스왑 / 페이지 교체** | 메모리 부족 시 페이지를 디스크로 evict(LRU/Clock). virtio-blk·저널링이 토대 | 중상 |
+| **슬랩 / 버디 할당기** | 단순 freelist → 객체 캐싱 할당기로 단편화↓ (Bonwick 슬랩) | 중 |
+| **공유 메모리 IPC** | mmap을 프로세스 간 공유 모드로 — 여러 프로세스가 같은 물리 페이지 | 중 |
+| **네임스페이스(컨테이너 기초)** | PID/mount 네임스페이스로 프로세스 격리 — 도커의 뿌리 | 상 |
+| **FS 정제** | inode 간접 블록(큰 파일), 심볼릭 링크, fs 동시 접근 락 | 중 |
+| **TCP 정제** | 재전송 타이머·혼잡 제어(슬로스타트/AIMD)·윈도우·재정렬 버퍼 | 상 |
+
+### 구현 너머 — 그 다음 코스
+- **OSTEP**(Operating Systems: Three Easy Pieces): 보편 개념 심화, 프로젝트 절반이 xv6 확장
+- **MIT 6.824 분산 시스템**: Raft 합의로 KV 스토어 4단계 구축 — 커널 다음의 자연스러운 길
+- **Pintos**(스탠퍼드) / **리눅스 커널 기여**(실전 적용)
+
+참고: [Self-Guided OS](https://jakegut.com/posts/sg-os/) · [OS 책 추천 15선](https://blog.codingconfessions.com/p/my-top-15-os-books) · [Bonwick 슬랩 논문](https://people.eecs.berkeley.edu/~kubitron/courses/cs194-24-S14/hand-outs/bonwick_slab.pdf) · [namespaces 커널뷰](https://www.schutzwerk.com/en/blog/linux-container-namespaces05-kernel/)
+
 ## 구조
 
 ```
