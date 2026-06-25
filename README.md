@@ -49,6 +49,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | 랩 | 주제 | 상태 |
 |---|---|---|
 | util / syscall / pgtbl / traps | 유틸·시스템콜·페이지테이블·트랩 | 완료 |
+| **가상메모리 (paging)** | **Sv39 3단계 페이지테이블, 커널 식별 매핑, 프로세스별 페이지테이블=주소공간 격리, satp 전환** | **완료** |
 | lazy | 지연 할당(demand paging) | 완료 |
 | mmap | 메모리 맵 파일 | 완료 |
 | fs | 저널링 FS(생성/삭제/영속) | 완료 — write-ahead 로그(커밋→설치, 마운트 복구), `rm` 삭제 + 빈 블록 비트맵 재사용. inode 간접블록은 미구현(연속 할당) |
@@ -58,6 +59,8 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | net | 네트워크 스택 | 완료 — virtio-net + 이더넷/ARP/IP/UDP/ICMP/DNS + **TCP**. ARP로 게이트웨이 MAC 해석, ICMP ping 왕복, DNS 질의(외부망 필요), TCP 서버(3-way 핸드셰이크/데이터/에코/종료, 셸 `tcp`) |
 
 > xv6 6.1810 랩(util/syscall/pgtbl/traps/lazy/mmap/fs/cow/thread/lock/net)은 **전부 완료**.
+>
+> **가상메모리(VM)** 는 단일 랩이 아니라 여러 랩에 걸쳐 완성됨 — **Sv39 페이징(paging) + 프로세스별 주소공간 격리 + demand paging(lazy) + mmap + copy-on-write(cow) + 페이지 폴트 핸들러**. 즉 "가상주소→물리 변환, 격리, 폴트로 페이지 만들기"라는 VM의 핵심은 모두 구현됨. 남은 건 *정제*(스왑/거대페이지/ASID/ASLR 등, 아래 다음 로드맵 참고).
 
 ## 다음 로드맵 (더 배울 것)
 
