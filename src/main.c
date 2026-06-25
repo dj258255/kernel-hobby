@@ -8,6 +8,7 @@
 #include "vm.h"
 #include "proc.h"
 #include "virtio.h"
+#include "net.h"
 #include "fs.h"
 #include "spinlock.h"
 #include "csr.h"
@@ -76,6 +77,10 @@ void kmain(void) {
 
     virtio_disk_init(); // virtio-blk 디스크
     fs_init();          // 파일시스템 마운트
+
+    // Stage 8: 네트워킹 — virtio-net 초기화 후 ARP/DNS 연결성 데모(폴링).
+    if (net_init() == 0)
+        net_demo();
 
     // Stage 7+: 유저공간 셸을 첫 유저 프로세스로 띄운다(커널에 임베드된 init=셸).
     procinit();
