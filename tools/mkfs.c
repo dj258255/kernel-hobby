@@ -56,8 +56,13 @@ int main(int argc, char **argv) {
         if (sizes[i] == 0) cur += 0;       // 빈 파일은 0블록
     }
 
-    // 2) 블록0: 슈퍼블록 (next_free = 첫 빈 데이터 블록)
+    // 디스크 전체 블록 수(빈 블록 비트맵용). 최소 256블록.
+    unsigned TOTAL = 256;
+    if (cur > TOTAL) TOTAL = cur;
+
+    // 2) 블록0: 슈퍼블록 (next_free = 첫 빈 데이터 블록, total_blocks = 디스크 크기)
     sb.next_free = cur;
+    sb.total_blocks = TOTAL;
     char sbblk[BSIZE];
     memset(sbblk, 0, BSIZE);
     memcpy(sbblk, &sb, sizeof(sb));
@@ -69,7 +74,12 @@ int main(int argc, char **argv) {
     memcpy(dirblk, dir, sizeof(dir));
     fwrite(dirblk, 1, BSIZE, out);
 
-    // 4) 블록2..: 파일 데이터(블록 단위로 패딩)
+    // 3.5) 블록2: 빈 로그 헤더(committed=0), 블록3..: 빈 로그 데이터 블록 LOGN개
+    fwrite(zero, 1, BSIZE, out);            // 로그 헤더(전부 0 → committed=0)
+    for (int b = 0; b < LOGN; b++)
+        fwrite(zero, 1, BSIZE, out);
+
+    // 4) 블록 DATASTART..: 파일 데이터(블록 단위로 패딩)
     for (int i = 0; i < nfiles; i++) {
         unsigned written = 0;
         while (written < sizes[i]) {
@@ -85,8 +95,6 @@ int main(int argc, char **argv) {
     }
 
     // 5) 새 파일 생성용 여유 공간으로 패딩(총 TOTAL 블록까지 0으로 채움)
-    unsigned TOTAL = 256;            // 128KB 디스크
-    if (cur > TOTAL) TOTAL = cur;
     for (unsigned b = cur; b < TOTAL; b++)
         fwrite(zero, 1, BSIZE, out);
 

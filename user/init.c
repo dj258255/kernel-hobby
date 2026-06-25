@@ -46,7 +46,12 @@ void _start(void) {
 
         // 내장 명령
         if (streq(line, "help")) {
-            puts("builtins: ls, cat <file>, write <file> <text>, mem, help.  others = disk programs.\n");
+            puts("builtins: ls, cat <file>, write <file> <text>, rm <file>, mem, help.  others = disk programs.\n");
+            continue;
+        }
+        if (startswith(line, "rm ")) {
+            if (sys_rm(line + 3) != 0)
+                puts("rm: no such file\n");
             continue;
         }
         if (streq(line, "ls")) {

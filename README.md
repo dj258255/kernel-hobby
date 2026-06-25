@@ -38,6 +38,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 - **쓰기 가능 FS**: 셸 `write <file> <text>`로 파일 생성 — 빈 블록 할당 + 데이터 쓰기 + 디렉터리/슈퍼블록 디스크 갱신. **재부팅해도 영속**(disk write). virtio 쓰기 경로 동작 확인
 - **Stage 8: 네트워킹**: virtio-net 드라이버(RX/TX 큐, 12B net 헤더) + 미니 스택(이더넷/ARP/IP/UDP/ICMP/DNS). 부팅 시 ARP로 게이트웨이 MAC 해석 → ICMP로 게이트웨이 ping(왕복) → DNS 질의. QEMU user(SLIRP) 네트워킹 상대로 검증
 - **Copy-on-Write fork**: 물리 페이지 참조 카운트(`kalloc`) + fork 시 코드·힙 페이지를 복사 대신 읽기 전용 공유(PTE_COW). 쓰기 폴트가 나는 "그 순간" 복제 → 부모/자식 격리. 스택만 사적 복사(트랩 프레임이 유저 스택 위에 있어 공유 불가). `cowtest`로 시연 — 자식이 99를 써도 부모는 42, 메모리 누수 없음
+- **저널링 파일시스템**: 모든 쓰기를 트랜잭션으로 — 데이터/디렉터리/슈퍼블록을 로그 영역에 모은 뒤 커밋 표시 → 제자리에 설치(install). 크래시 시 마운트에서 복구(replay)해 원자성 보장. 셸 `rm <file>` 삭제 + 마운트 때 디렉터리로 빈 블록 비트맵을 재구성해 블록 재사용. 재부팅해도 영속
 
 > 트랩 프레임에 `sepc`/`sstatus`를 저장해 여러 프로세스의 트랩이 인터리빙돼도 안전. 유저 프로세스 트랩은 SUM 비트로 유저 스택에서 처리(트램폴린 단순화). fork는 부모의 트랩 프레임이 유저 스택에 있다는 점을 이용 — 스택 페이지를 복사하면 같은 VA에 프레임이 그대로 들어가, `forkret`이 그 프레임으로 복귀. exec는 주소공간을 바꾸면 유저 스택이 통째로 바뀌므로, satp 전환 후 sret까지를 스택을 건드리지 않는 어셈블리(`userret_to`)로 처리. 유저 프로그램은 `user/`에서 별도 컴파일 → `init`은 `.incbin` 임베드, `hello`는 디스크에 적재. virtio used 링은 비동기 갱신이라 `volatile`로 읽는다.
 
@@ -48,7 +49,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | util / syscall / pgtbl / traps | 유틸·시스템콜·페이지테이블·트랩 | 완료 |
 | lazy | 지연 할당(demand paging) | 완료 |
 | mmap | 메모리 맵 파일 | 완료 |
-| fs | 쓰기 가능 FS(생성/영속) | 완료 (로깅·inode·삭제는 정제) |
+| fs | 저널링 FS(생성/삭제/영속) | 완료 — write-ahead 로그(커밋→설치, 마운트 복구), `rm` 삭제 + 빈 블록 비트맵 재사용. inode 간접블록은 미구현(연속 할당) |
 | cow | Copy-on-Write fork | 완료 — 물리 페이지 refcount + 쓰기 폴트 시 복제. 코드·힙 페이지는 COW 공유, 스택만 사적 복사(트랩 프레임을 유저 스택에 두는 설계 때문). `cowtest`로 시연 |
 | thread | 유저 스레드(uthread) | 보류(단일 페이지 프로그램 모델 — 전역/스택 배치 제약) |
 | lock | 병렬성·락(멀티코어 SMP) | 완료 — 3코어가 공유 proctable에서 동시 스케줄. 락 baton(swtch 가로지르며 전달), `sscratch`로 hartid 복구, kalloc·콘솔·uart 락. (fs 락은 정제) |
