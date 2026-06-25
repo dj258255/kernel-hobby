@@ -46,11 +46,11 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | util / syscall / pgtbl / traps | 유틸·시스템콜·페이지테이블·트랩 | 완료 |
 | lazy | 지연 할당(demand paging) | 완료 |
 | mmap | 메모리 맵 파일 | 완료 |
-| cow | Copy-on-Write fork | 설계상 제약(우리 fork는 프레임을 유저 스택에 둠) |
-| thread | 멀티스레딩 | 예정 |
-| lock | 병렬성·락(멀티코어 SMP) | 예정 |
 | fs | 쓰기 가능 FS(생성/영속) | 완료 (로깅·inode·삭제는 정제) |
-| net | TCP/IP 네트워크 스택 | 예정 |
+| cow | Copy-on-Write fork | 설계상 제약(우리 fork는 프레임을 유저 스택에 둠) |
+| thread | 유저 스레드(uthread) | 보류(단일 페이지 프로그램 모델 — 전역/스택 배치 제약) |
+| lock | 병렬성·락(멀티코어 SMP) | 예정(큰 리팩터) |
+| net | TCP/IP 네트워크 스택 | 예정(큰 작업) |
 
 ## 구조
 
