@@ -12,26 +12,35 @@
 #include "trap.h"   // struct regframe
 #include "elf.h"    // load_elf
 #include "fs.h"     // fs_read
+#include "spinlock.h"
 
 #define NPROC  8
 #define PGSIZE 4096
 
 extern void swtch(struct context *old, struct context *new);
-extern void forkret(void);  // kernelvec.S — fork된 자식 진입점
-extern void userret_to(uint64 entry, uint64 sp, uint64 satp);  // kernelvec.S — exec 진입
+extern void trapret_from(uint64 frame);  // kernelvec.S — sp=frame 후 트랩 복귀
 extern char initcode[];     // initcode.S — 임베드된 유저 프로그램 ELF
 
 static struct proc    proctable[NPROC];
-static struct context sched_context;   // 스케줄러 자신의 컨텍스트
-static struct proc   *cur = 0;         // 현재 실행 중인 proc
-static int            next_pid = 1;    // 다음 프로세스 ID
+static struct proc   *cpu_proc[NCPU];      // 코어별 현재 proc
+static struct context cpu_sched[NCPU];     // 코어별 스케줄러 컨텍스트
+struct spinlock       pt_lock;             // proctable + 스케줄링 보호(콘솔도 공유)
+static int            next_pid = 1;        // 다음 프로세스 ID
 
 static void zero(void *p, uint64 n) {
     char *d = p;
     while (n-- > 0) *d++ = 0;
 }
 
-struct proc *current_proc(void) { return cur; }
+// 현재 코어가 실행 중인 proc.
+struct proc *current_proc(void) { return cpu_proc[r_tp()]; }
+
+// fork된 자식의 첫 실행 진입점: 스케줄러가 잡은 락을 놓고 트랩 프레임으로 복귀.
+void forkret(void) {
+    release(&pt_lock);
+    struct proc *p = cpu_proc[r_tp()];
+    trapret_from(p->tf_va);   // sp=프레임 VA; trapret (돌아오지 않음)
+}
 
 static void copybytes(void *dst, const void *src, uint64 n) {
     char *d = dst;
@@ -39,18 +48,19 @@ static void copybytes(void *dst, const void *src, uint64 n) {
     while (n-- > 0) *d++ = *s++;
 }
 
-// 새 커널 스레드가 처음 실행될 때 거치는 래퍼: 인터럽트를 켜고 본체를 호출.
+// 새 커널 스레드가 처음 실행될 때 거치는 래퍼: 스케줄러 락을 놓고 본체 호출.
 static void thread_start(void) {
+    release(&pt_lock);    // 스케줄러가 잡은 락을 놓는다(첫 실행)
     intr_on();            // 이 스레드부터 인터럽트(=선점) 받기 시작
-    cur->fn();            // 본체 실행
-    cur->state = UNUSED;  // 본체가 끝나면(보통 안 끝남) 종료 처리
-    yield();              // 스케줄러로 (돌아오지 않음)
+    current_proc()->fn(); // 본체 실행
+    proc_exit();          // 본체가 끝나면 종료(돌아오지 않음)
     for (;;) ;
 }
 
 // 유저 프로세스가 처음 실행될 때 거치는 래퍼: S-mode→U-mode로 진입.
 // 스케줄러가 swtch로 여기 진입시키며, satp은 이미 이 프로세스 테이블이다.
 static void enter_user(void) {
+    release(&pt_lock);   // 스케줄러가 잡은 락을 놓는다(첫 실행)
     uint64 s = r_sstatus();
     s &= ~SSTATUS_SPP;   // SPP=0 → sret 시 U-mode로
     s |= SSTATUS_SPIE;   // U-mode에서 인터럽트 enable(선점 가능)
@@ -62,6 +72,7 @@ static void enter_user(void) {
 }
 
 void procinit(void) {
+    initlock(&pt_lock);
     for (int i = 0; i < NPROC; i++)
         proctable[i].state = UNUSED;
 }
@@ -128,7 +139,8 @@ struct proc *make_user_proc(const char *name) {
 // 현재 유저 프로세스를 복제한다(fork). 부모에겐 자식 pid를, 자식에겐 0을 반환.
 //   f = 부모의 트랩 프레임(유저 스택 위, ecall 시점 상태).
 int proc_fork(struct regframe *f) {
-    struct proc *parent = cur;
+    struct proc *parent = current_proc();
+    acquire(&pt_lock);
     for (int i = 0; i < NPROC; i++) {
         struct proc *child = &proctable[i];
         if (child->state != UNUSED)
@@ -151,11 +163,11 @@ int proc_fork(struct regframe *f) {
         cf->a0 = 0;             // 자식의 fork() 반환값 = 0
         cf->sepc = f->sepc + 4; // ecall 다음 명령부터(부모와 동일 지점)
 
-        // 자식은 forkret로 진입 → s0(프레임 VA)로 sp 잡고 공통 복귀 경로
+        // 자식은 forkret로 진입 → tf_va(프레임 VA)로 sp 잡고 공통 복귀 경로
         zero(&child->context, sizeof(child->context));
         child->context.ra = (uint64)forkret;
-        child->context.s0 = (uint64)f;             // 프레임 VA(자식에서도 동일)
-        child->context.sp = (uint64)USERSTACKTOP;  // forkret 첫 명령이 덮어씀
+        child->context.sp = (uint64)USERSTACKTOP;  // forkret이 release() 동안 쓸 스택
+        child->tf_va = (uint64)f;                  // 프레임 VA(자식에서도 동일)
 
         child->is_user = 1;
         child->counter = 0;
@@ -170,8 +182,11 @@ int proc_fork(struct regframe *f) {
         child->name[j++] = '+';   // 자식 표시
         child->name[j] = 0;
         child->state = RUNNABLE;
-        return child->pid;
+        int pid = child->pid;
+        release(&pt_lock);
+        return pid;
     }
+    release(&pt_lock);
     return -1;  // 빈 슬롯 없음
 }
 
@@ -194,7 +209,7 @@ int proc_exec(const char *path) {
         return -1;
     }
 
-    struct proc *p = cur;
+    struct proc *p = current_proc();
     char *oldcode = p->ucode;
     vm_free_range(p->pagetable, HEAPBASE, p->heap_top);  // 옛 프로그램 힙 회수
     p->heap_top = HEAPBASE;                          // 새 프로그램은 빈 힙
@@ -241,7 +256,7 @@ void proc_freeimage(struct proc *p) {
 // sbrk: 힙을 n바이트 키운다. 물리 페이지는 할당하지 않는다(지연 할당).
 // 이전 heap_top을 반환(새로 얻은 영역의 시작 주소).
 uint64 proc_sbrk(int n) {
-    struct proc *p = cur;
+    struct proc *p = current_proc();
     uint64 old = p->heap_top;
     if (n > 0)
         p->heap_top += (uint64)n;   // 성장만 지원(축소 생략)
@@ -251,7 +266,7 @@ uint64 proc_sbrk(int n) {
 // 파일을 주소공간에 매핑(mmap). 페이지는 폴트 시 파일에서 적재(지연).
 // 베이스 VA를 반환, 파일 없으면 -1.
 uint64 proc_mmap(const char *path) {
-    struct proc *p = cur;
+    struct proc *p = current_proc();
     unsigned start, size;
     if (fs_stat(path, &start, &size) != 0)
         return (uint64)-1;
@@ -267,7 +282,7 @@ uint64 proc_mmap(const char *path) {
 // 처리하면 1(명령 재시도), 우리 영역이 아니면 0.
 int proc_pagefault(uint64 va, int store) {
     (void)store;
-    struct proc *p = cur;
+    struct proc *p = current_proc();
     if (!p || !p->is_user)
         return 0;
     uint64 a = va & ~(uint64)(PGSIZE - 1);          // 페이지 정렬
@@ -304,55 +319,57 @@ int proc_pagefault(uint64 va, int store) {
     return 0;                                         // 우리 영역 아님 → 진짜 폴트
 }
 
-// 스케줄러: RUNNABLE proc을 골라 실행. proc이 yield하면 여기로 돌아온다.
+// 스케줄러: 각 코어가 무한 루프로 RUNNABLE proc을 골라 실행.
+// pt_lock을 잡고 스캔→점유(RUNNING)하고, swtch를 가로질러 락을 들고 들어간다.
+// proc은 첫 실행/yield에서 그 락을 놓는다(baton). proc이 양보하면 락을 들고 복귀.
 void scheduler(void) {
+    int id = r_tp();
+    cpu_proc[id] = 0;
     for (;;) {
-        int ran = 0;
+        intr_on();   // 이 코어가 인터럽트/wakeup을 받을 수 있게
+        acquire(&pt_lock);
         for (int i = 0; i < NPROC; i++) {
             struct proc *p = &proctable[i];
             if (p->state == RUNNABLE) {
                 p->state = RUNNING;
-                cur = p;
-                switch_satp(p->pagetable);           // 이 프로세스 주소공간으로
-                swtch(&sched_context, &p->context);  // p 실행 → yield 시 복귀
-                cur = 0;
-                switch_satp(kernel_pt());            // 커널 주소공간으로 복귀
-                ran = 1;
+                cpu_proc[id] = p;
+                switch_satp(p->pagetable);
+                swtch(&cpu_sched[id], &p->context);  // pt_lock 든 채로 진입(proc이 놓음)
+                switch_satp(kernel_pt());
+                cpu_proc[id] = 0;                    // 복귀 시 pt_lock 다시 들고 있음
             }
         }
-        if (!ran) {
-            // 돌릴 게 없으면(모두 SLEEPING 등) 인터럽트를 켜고 쉰다.
-            // 콘솔/타이머 인터럽트가 누군가를 깨우면 다시 돈다.
-            intr_on();
-            asm volatile("wfi");
-            intr_off();
-        }
+        release(&pt_lock);
     }
 }
 
-// 현재 스레드가 CPU를 스케줄러에 양보한다(타이머 인터럽트나 자발적으로).
+// 현재 proc이 CPU를 스케줄러에 양보(타이머 선점/자발적). pt_lock을 들고 swtch.
 void yield(void) {
-    struct proc *p = cur;
+    int id = r_tp();
+    struct proc *p = cpu_proc[id];
     if (!p)
         return;
+    acquire(&pt_lock);
     if (p->state == RUNNING)
         p->state = RUNNABLE;
-    swtch(&p->context, &sched_context);  // 스케줄러로
+    swtch(&p->context, &cpu_sched[id]);  // pt_lock 든 채로 스케줄러로(스케줄러가 놓음)
+    release(&pt_lock);                   // 다시 스케줄되면 여기서 락 해제
 }
 
-// chan에서 잠든다: 상태를 SLEEPING으로 두고 스케줄러에 양보.
-// 트랩 처리 중(SIE=0)이라 "검사→sleep"이 원자적 → 잃어버린 wakeup 없음.
+// chan에서 잠든다. 호출자가 pt_lock을 쥐고 들어온다(조건검사↔sleep 원자성 보장).
+// swtch를 가로질러 락을 든 채로 스케줄러에 넘기고, 깨어나면 다시 든 채로 복귀.
 void sleep(void *chan) {
-    struct proc *p = cur;
+    int id = r_tp();
+    struct proc *p = cpu_proc[id];
     if (!p)
         return;
     p->chan = chan;
     p->state = SLEEPING;
-    swtch(&p->context, &sched_context);  // 깨어날 때까지 스케줄러로
-    p->chan = 0;                         // 다시 스케줄되면 여기서 재개
+    swtch(&p->context, &cpu_sched[id]);  // pt_lock held
+    p->chan = 0;                         // 깨어나면(pt_lock held) 여기서 재개
 }
 
-// chan에서 자는 모든 프로세스를 RUNNABLE로.
+// chan에서 자는 모든 프로세스를 RUNNABLE로. 호출자가 pt_lock을 쥐고 있어야 한다.
 void wakeup(void *chan) {
     for (int i = 0; i < NPROC; i++) {
         struct proc *p = &proctable[i];
@@ -363,16 +380,21 @@ void wakeup(void *chan) {
 
 // 현재 프로세스를 종료(ZOMBIE)하고 부모를 깨운다. 돌아오지 않는다.
 void proc_exit(void) {
-    struct proc *p = cur;
+    int id = r_tp();
+    struct proc *p = cpu_proc[id];
+    acquire(&pt_lock);
     if (p->parent)
-        wakeup(p->parent);   // wait 중인 부모 깨우기
+        wakeup(p->parent);   // wait 중인 부모 깨우기(pt_lock held)
     p->state = ZOMBIE;
-    swtch(&p->context, &sched_context);  // 스케줄러로(다신 안 돌아옴)
+    swtch(&p->context, &cpu_sched[id]);  // pt_lock 든 채로(스케줄러가 놓음). 안 돌아옴.
+    for (;;) ;
 }
 
 // 자식 하나가 종료할 때까지 기다린다. 종료한 자식을 회수하고 그 pid 반환.
 int proc_wait(void) {
-    struct proc *p = cur;
+    int id = r_tp();
+    struct proc *p = cpu_proc[id];
+    acquire(&pt_lock);
     for (;;) {
         int kids = 0;
         for (int i = 0; i < NPROC; i++) {
@@ -382,15 +404,18 @@ int proc_wait(void) {
             kids = 1;
             if (q->state == ZOMBIE) {
                 int pid = q->pid;
-                proc_freeimage(q);  // 유저 페이지 + 페이지 테이블 회수
+                proc_freeimage(q);  // 유저 페이지 + 페이지 테이블 회수(pt_lock held)
                 q->parent = 0;
                 q->state = UNUSED;
+                release(&pt_lock);
                 return pid;
             }
         }
-        if (!kids)
+        if (!kids) {
+            release(&pt_lock);
             return -1;        // 자식 없음
-        sleep(p);             // 자식이 exit하며 wakeup(p)할 때까지
+        }
+        sleep(p);             // pt_lock 든 채로 잠듦(자식 exit가 wakeup). 깨면 락 유지.
     }
 }
 

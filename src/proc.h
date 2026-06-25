@@ -4,6 +4,9 @@
 
 #include "types.h"
 #include "vm.h"   // pagetable_t
+#include "spinlock.h"
+
+extern struct spinlock pt_lock;   // proctable + 스케줄링 보호(sleep/wakeup 호출 시 보유)
 
 // 컨텍스트 스위치 때 저장/복원하는 callee-saved 레지스터들.
 // (swtch.S의 오프셋과 정확히 일치해야 한다)
@@ -31,6 +34,7 @@ struct proc {
     char           *ustack;     // 유저 스택 페이지(물리) — fork가 복사
     void           *chan;       // SLEEPING일 때 기다리는 채널
     struct proc    *parent;     // 부모(wait/exit용)
+    uint64          tf_va;      // fork된 자식의 트랩 프레임 VA(forkret용)
     uint64          heap_top;   // 힙 끝(sbrk로 성장, 페이지는 폴트 시 지연 할당)
     uint64          mmap_base;  // mmap 영역 시작 VA(0이면 없음)
     uint32          mmap_start; // 매핑된 파일의 시작 블록

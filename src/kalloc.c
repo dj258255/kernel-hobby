@@ -5,6 +5,7 @@
 
 #include "kalloc.h"
 #include "types.h"
+#include "spinlock.h"
 
 #define PGSIZE 4096
 #define PHYSTOP 0x88000000UL   // QEMU virt 기본 RAM(128MB): 0x8000_0000~0x8800_0000
@@ -18,28 +19,34 @@ struct run {
     struct run *next;
 };
 
-static struct run *freelist = 0;
-static uint64 freecnt = 0;
+static struct run    *freelist = 0;
+static uint64         freecnt = 0;
+static struct spinlock kmem_lock;   // 여러 코어가 동시 할당/해제하므로 보호
 
 void kfree(void *pa) {
+    acquire(&kmem_lock);
     struct run *r = (struct run *)pa;
     r->next = freelist;
     freelist = r;
     freecnt++;
+    release(&kmem_lock);
 }
 
 void kinit(void) {
+    initlock(&kmem_lock);
     uint64 p = PGROUNDUP((uint64)end);
     for (; p + PGSIZE <= PHYSTOP; p += PGSIZE)
         kfree((void *)p);
 }
 
 void *kalloc(void) {
+    acquire(&kmem_lock);
     struct run *r = freelist;
     if (r) {
         freelist = r->next;
         freecnt--;
     }
+    release(&kmem_lock);
     return (void *)r;  // 0이면 메모리 부족
 }
 

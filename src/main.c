@@ -28,20 +28,29 @@ static long sbi_hart_start(uint64 hartid, uint64 addr) {
     return (long)a0;   // SBI error code (0=성공)
 }
 
-// 보조 하트 진입점(entry.S가 호출). 자기 satp만 잡고 온라인을 알린 뒤 대기.
-// (다음 단계에서 스케줄러에 합류시킬 예정)
+// 보조 하트 진입점(entry.S가 호출). satp + 트랩을 잡고 스케줄러에 합류한다.
 void hart_main(void) {
     kvminithart();   // 이 코어의 satp에 (하트 0이 만든) 커널 페이지 테이블 적재
+    trap_init();     // 이 코어의 stvec + 타이머/외부 인터럽트 enable
+    timer_init();    // 이 코어의 타이머 시작(선점)
     acquire(&pr_lock);
     uart_puts("[ok] hart ");
     uart_dec(r_tp());
-    uart_puts(" online (secondary core)\n");
+    uart_puts(" online -> joining scheduler\n");
     release(&pr_lock);
-    for (;;)
-        asm volatile("wfi");   // 일단 대기
+    scheduler();     // 공유 proctable에서 RUNNABLE을 골라 실행(돌아오지 않음)
 }
 
+static int boot_taken = 0;   // 0이면 아직 부팅 하트 없음
+
 void kmain(void) {
+    // 먼저 진입한 하트가 부팅 하트(부팅 하트 id는 OpenSBI가 정하며 0이 아닐 수 있다).
+    // 나머지(SBI로 깨운)는 보조 경로로.
+    if (__sync_lock_test_and_set(&boot_taken, 1) != 0) {
+        hart_main();             // 보조 하트 (돌아오지 않음)
+        for (;;) asm volatile("wfi");
+    }
+
     uart_init();
     uart_puts("\n");
     uart_puts("========================================\n");
@@ -68,18 +77,18 @@ void kmain(void) {
     virtio_disk_init(); // virtio-blk 디스크
     fs_init();          // 파일시스템 마운트
 
-    // SMP: 스핀락 준비 후 보조 하트(코어)들을 SBI HSM으로 깨운다.
-    initlock(&pr_lock);
-    uart_puts("[ok] hart 0 online (boot core), starting ");
-    uart_dec(NHART - 1);
-    uart_puts(" secondary core(s)\n");
-    for (int h = 1; h < NHART; h++)
-        sbi_hart_start(h, (uint64)_entry);   // 반환값 0=성공
-
     // Stage 7+: 유저공간 셸을 첫 유저 프로세스로 띄운다(커널에 임베드된 init=셸).
     procinit();
     make_user_proc("sh");
-    uart_puts("[ok] starting userspace shell\n");
 
-    scheduler();    // RUNNABLE 프로세스를 선점형으로 실행 (돌아오지 않음)
+    // SMP: 스핀락 준비 후, 자신을 제외한 모든 하트를 SBI HSM으로 깨워 스케줄러에 합류.
+    initlock(&pr_lock);
+    uart_puts("[ok] boot hart ");
+    uart_dec(r_tp());
+    uart_puts(" up; waking other cores + starting shell\n");
+    for (int h = 0; h < NHART; h++)
+        if ((uint64)h != r_tp())
+            sbi_hart_start(h, (uint64)_entry);
+
+    scheduler();    // 부팅 하트도 스케줄러에 합류 (돌아오지 않음)
 }

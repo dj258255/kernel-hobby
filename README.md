@@ -49,7 +49,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | fs | 쓰기 가능 FS(생성/영속) | 완료 (로깅·inode·삭제는 정제) |
 | cow | Copy-on-Write fork | 설계상 제약(우리 fork는 프레임을 유저 스택에 둠) |
 | thread | 유저 스레드(uthread) | 보류(단일 페이지 프로그램 모델 — 전역/스택 배치 제약) |
-| lock | 병렬성·락(멀티코어 SMP) | 시작 — 멀티하트 부팅(SBI HSM) + 스핀락 + 코어별 상태(`tp`). 다음: 공유 자료구조 락 + 코어별 스케줄러 |
+| lock | 병렬성·락(멀티코어 SMP) | 완료 — 3코어가 공유 proctable에서 동시 스케줄. 락 baton(swtch 가로지르며 전달), `sscratch`로 hartid 복구, kalloc·콘솔·uart 락. (fs 락은 정제) |
 | net | TCP/IP 네트워크 스택 | 예정(큰 작업) |
 
 ## 구조

@@ -6,6 +6,9 @@
 
 #include "uart.h"
 #include "console.h"
+#include "spinlock.h"
+
+static struct spinlock uart_lock;  // 여러 코어 출력이 섞이지 않게(메시지 단위 직렬화)
 
 #define UART0 0x10000000L
 #define UART_RBR 0  // Receive Buffer Register (읽으면 받은 글자)
@@ -18,29 +21,40 @@
 static volatile unsigned char *const uart = (volatile unsigned char *)UART0;
 
 void uart_init(void) {
+    initlock(&uart_lock);
     // OpenSBI가 이미 보레이트 등을 설정해 두어 추가 초기화가 필요 없다.
 }
 
-void uart_putc(char c) {
-    // 송신 버퍼가 빌 때까지 기다린 뒤 한 글자 쓴다.
+// 락 없이 한 글자(내부용). 공개 함수가 메시지 단위로 락을 잡고 호출.
+static void putc_raw(char c) {
     while ((uart[UART_LSR] & LSR_TX_IDLE) == 0)
         ;
     uart[UART_THR] = (unsigned char)c;
 }
 
+void uart_putc(char c) {
+    acquire(&uart_lock);
+    putc_raw(c);
+    release(&uart_lock);
+}
+
 void uart_puts(const char *s) {
+    acquire(&uart_lock);
     for (; *s; s++) {
         if (*s == '\n')
-            uart_putc('\r');  // 터미널 줄바꿈 보정
-        uart_putc(*s);
+            putc_raw('\r');  // 터미널 줄바꿈 보정
+        putc_raw(*s);
     }
+    release(&uart_lock);
 }
 
 void uart_dec(uint64 n) {
     char buf[21];
     int i = 0;
+    acquire(&uart_lock);
     if (n == 0) {
-        uart_putc('0');
+        putc_raw('0');
+        release(&uart_lock);
         return;
     }
     while (n > 0) {
@@ -48,15 +62,19 @@ void uart_dec(uint64 n) {
         n /= 10;
     }
     while (i > 0)
-        uart_putc(buf[--i]);
+        putc_raw(buf[--i]);
+    release(&uart_lock);
 }
 
 void uart_hex(uint64 n) {
-    uart_puts("0x");
+    acquire(&uart_lock);
+    putc_raw('0');
+    putc_raw('x');
     for (int shift = 60; shift >= 0; shift -= 4) {
         int d = (int)((n >> shift) & 0xf);
-        uart_putc(d < 10 ? (char)('0' + d) : (char)('a' + d - 10));
+        putc_raw(d < 10 ? (char)('0' + d) : (char)('a' + d - 10));
     }
+    release(&uart_lock);
 }
 
 void uart_enable_rx(void) {

@@ -42,6 +42,9 @@ kernelvec:
         csrr    t0, sstatus
         sd      t0,  248(sp)
 
+        csrr    tp, sscratch    # tp = 이 코어의 hartid 복구(유저가 tp를 덮었을 수 있음).
+                                # 커널 코드의 r_tp()가 올바른 코어 번호를 보게 한다.
+
         mv      a0, sp          # 저장된 프레임 포인터를 kerneltrap의 인자로
         call    kerneltrap
 
@@ -88,12 +91,11 @@ trapret:
 
         sret                # sepc로 복귀 (인터럽트면 원래 자리로 재개)
 
-# forkret — fork된 자식이 처음 스케줄될 때 진입점(context.ra).
-# 스케줄러가 swtch로 진입시키며, s0에는 자식의 트랩 프레임 VA가 들어 있다
-# (swtch가 context.s0에서 복원). sp를 그 프레임으로 잡고 공통 복귀 경로로.
-        .globl  forkret
-forkret:
-        mv      sp, s0
+# trapret_from(uint64 frame) — sp를 프레임 VA로 잡고 공통 복귀 경로로.
+# fork된 자식의 진입(C forkret)이 락을 놓은 뒤 호출한다.
+        .globl  trapret_from
+trapret_from:
+        mv      sp, a0
         j       trapret
 
 # userret_to(uint64 entry, uint64 sp, uint64 satp)  [a0, a1, a2]

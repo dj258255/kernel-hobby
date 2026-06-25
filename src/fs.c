@@ -16,6 +16,8 @@ static int nfiles;
 static int mounted;
 static uint32 next_free;      // 다음 빈 데이터 블록(파일 생성 시 할당)
 static uint8 fsbuf[BSIZE];   // 디스크 I/O 버퍼(커널 메모리)
+// NOTE(SMP): virtio+fsbuf는 아직 락이 없다. 단일 사용자 셸은 fs 접근이 순차라
+//   동시 접근이 안 생기지만, 일반적으로는 fs_lock으로 보호해야 한다(정제 항목).
 
 static int streq(const char *a, const char *b) {
     while (*a && *b) {

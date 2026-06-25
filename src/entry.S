@@ -7,20 +7,18 @@
         .globl _entry
 _entry:
         mv      tp, a0             # tp = hartid (SBI가 a0로 전달)
+        csrw    sscratch, a0       # sscratch에도 hartid 보관(트랩 때 tp 복구용).
+                                   # 유저가 tp를 덮어도 커널은 sscratch로 hartid를 안다.
         # 코어별 스택: sp = stacks + (hartid + 1) * 4096   (스택 top)
         la      sp, stacks
         li      t0, 4096
         addi    t1, a0, 1
         mul     t0, t0, t1
         add     sp, sp, t0
-        bnez    a0, secondary      # hartid != 0 → 보조 하트
-        call    kmain              # 하트 0: 전체 초기화 (돌아오지 않음)
+        # 부팅 하트인지 보조 하트인지는 kmain이 판단(부팅 하트 id는 비결정적).
+        call    kmain
 1:      wfi
         j       1b
-secondary:
-        call    hart_main          # 보조 하트
-2:      wfi
-        j       2b
 
         # 코어별 부팅 스택 (NCPU=4 × 4KB)
         .section .bss
