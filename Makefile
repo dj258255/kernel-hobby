@@ -20,7 +20,7 @@ OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o b
 
 # 호스트(맥) 컴파일러로 빌드하는 도구 + 디스크에 담을 파일들
 HOSTCC  := cc
-FSFILES := fs/motd.txt fs/readme.txt build/hello build/lazytest build/mmaptest
+FSFILES := fs/motd.txt fs/readme.txt build/hello build/lazytest build/mmaptest build/cowtest
 
 all: build/kernel.elf build/fs.img
 
@@ -58,6 +58,12 @@ build/user_mmaptest.o: user/mmaptest.c user/usys.h | build
 
 build/mmaptest: build/user_mmaptest.o user/user.ld
 	$(LD) -T user/user.ld build/user_mmaptest.o -o $@
+
+build/user_cowtest.o: user/cowtest.c user/usys.h | build
+	$(CC) $(UCFLAGS) -c user/cowtest.c -o $@
+
+build/cowtest: build/user_cowtest.o user/user.ld
+	$(LD) -T user/user.ld build/user_cowtest.o -o $@
 
 # initcode.S는 위에서 만든 ELF를 .incbin으로 임베드하므로 의존성 추가
 build/initcode.o: build/user_init.elf

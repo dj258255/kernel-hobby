@@ -156,10 +156,58 @@ void vm_free_range(pagetable_t pt, uint64 start, uint64 end) {
     for (uint64 a = start; a < end; a += PGSIZE) {
         pte_t *pte = walk(pt, a, 0);
         if (pte && (*pte & PTE_V)) {
-            kfree((void *)PTE2PA(*pte));
+            kfree((void *)PTE2PA(*pte));   // refcount-- (공유 페이지면 살아남음)
             *pte = 0;
         }
     }
+}
+
+#define PTE_FLAGS(pte) ((pte) & 0x3FF)   // 하위 10비트(V/R/W/X/U/G/A/D/RSW)
+
+static void memcopy(void *dst, const void *src, uint64 n) {
+    char *d = dst; const char *s = src;
+    while (n-- > 0) *d++ = *s++;
+}
+
+// COW: 부모의 [start,end) 매핑 페이지를 자식과 공유한다.
+//  - 쓰기 가능 페이지는 양쪽 다 PTE_W를 떼고 PTE_COW를 달아 읽기전용 공유로 만든다.
+//  - 물리 페이지는 복사하지 않고 refcount만 올린다(쓰기 폴트 시 비로소 복제).
+int uvm_cow_share(pagetable_t parent, pagetable_t child, uint64 start, uint64 end) {
+    for (uint64 a = start; a < end; a += PGSIZE) {
+        pte_t *pte = walk(parent, a, 0);
+        if (pte == 0 || !(*pte & PTE_V))
+            continue;                         // 아직 폴트 안 난 페이지 → 자식이 따로 demand
+        uint64 pa = PTE2PA(*pte);
+        uint64 flags = PTE_FLAGS(*pte);
+        if (flags & PTE_W) {                  // 쓰기 가능 → COW로 전환
+            flags = (flags & ~PTE_W) | PTE_COW;
+            *pte = PA2PTE(pa) | flags;        // 부모도 읽기전용 COW가 된다
+        }
+        if (mappages(child, a, PGSIZE, pa, flags) != 0)
+            return -1;
+        kref_inc((void *)pa);                 // 이제 두 주소공간이 공유
+    }
+    sfence_vma();
+    return 0;
+}
+
+// COW 쓰기 폴트: va가 COW 페이지면 새 페이지에 복사하고 쓰기가능으로 되돌린다.
+// 1=처리됨(명령 재시도), 0=COW 페이지 아님(호출자가 계속 처리).
+int uvm_cow_fault(pagetable_t pt, uint64 va) {
+    uint64 a = PGROUNDDOWN(va);
+    pte_t *pte = walk(pt, a, 0);
+    if (pte == 0 || !(*pte & PTE_V) || !(*pte & PTE_COW))
+        return 0;
+    uint64 old = PTE2PA(*pte);
+    char *fresh = (char *)kalloc();
+    if (fresh == 0)
+        return 0;                             // 메모리 부족 → 진짜 폴트로
+    memcopy(fresh, (void *)old, PGSIZE);
+    uint64 flags = (PTE_FLAGS(*pte) & ~PTE_COW) | PTE_W;   // 다시 쓰기 가능, COW 표시 제거
+    *pte = PA2PTE(fresh) | flags;
+    sfence_vma();
+    kfree((void *)old);                       // 공유 해제(refcount--)
+    return 1;
 }
 
 // 프로세스별 페이지 테이블: 커널 식별 매핑 + 유저 코드(U|R|X) + 유저 스택(U|R|W).

@@ -13,6 +13,7 @@ typedef uint64 *pagetable_t;
 #define PTE_W (1L << 2)
 #define PTE_X (1L << 3)
 #define PTE_U (1L << 4)  // U-mode 접근 가능
+#define PTE_COW (1L << 8)  // 소프트웨어 예약(RSW) 비트: copy-on-write 공유 페이지
 
 // 유저 프로세스 주소 배치
 #define USERVA        0x1000L   // 유저 코드 진입점
@@ -34,5 +35,9 @@ void        remap_user_code(pagetable_t pt, uint64 newcode_pa);  // exec: 코드
 void        free_pagetable(pagetable_t pt);  // 페이지 테이블 구조 회수
 int         uvm_map(pagetable_t pt, uint64 va, uint64 pa, int perm);  // 유저 1페이지 매핑
 void        vm_free_range(pagetable_t pt, uint64 start, uint64 end);  // VA 범위의 매핑 페이지 해제
+// COW: 부모의 [start,end) 매핑 페이지를 자식과 읽기전용 공유로 잇는다(쓰기가능 페이지는 COW 표시).
+int         uvm_cow_share(pagetable_t parent, pagetable_t child, uint64 start, uint64 end);
+// COW 쓰기 폴트 처리: va가 COW 페이지면 복제해 쓰기가능으로 만든다(1=처리, 0=COW 아님).
+int         uvm_cow_fault(pagetable_t pt, uint64 va);
 
 #endif

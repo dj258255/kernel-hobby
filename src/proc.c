@@ -146,14 +146,19 @@ int proc_fork(struct regframe *f) {
         if (child->state != UNUSED)
             continue;
 
-        // 부모의 코드/스택 페이지를 새 물리 페이지로 통째 복사
-        char *code = kalloc();
+        // 코드 페이지: 복사하지 않고 COW로 공유(읽기전용 R|X라 쓰기 폴트가 없음).
+        //   → fork가 가벼워지고 메모리를 아낀다. refcount로 수명 관리.
+        // 스택 페이지: 사적 복사 유지. 아래에서 자식의 트랩 프레임(a0/sepc)을 직접
+        //   고쳐 써야 하는데, 공유하면 부모 프레임까지 망가지기 때문.
         char *ustack = kalloc();
-        copybytes(code, parent->ucode, PGSIZE);
         copybytes(ustack, parent->ustack, PGSIZE);
-        child->ucode = code;
+        kref_inc(parent->ucode);
+        child->ucode = parent->ucode;
         child->ustack = ustack;
-        child->pagetable = proc_pagetable((uint64)code, (uint64)ustack);
+        child->pagetable = proc_pagetable((uint64)parent->ucode, (uint64)ustack);
+
+        // 힙 페이지: COW로 공유(쓰기 시 비로소 복제). 부모가 이미 건드린 힙만 대상.
+        uvm_cow_share(parent->pagetable, child->pagetable, HEAPBASE, parent->heap_top);
 
         // 자식 스택에 복사된 트랩 프레임을 손본다:
         //  - 부모 프레임은 유저 VA (uint64)f 에 있고, 같은 VA가 자식에도 매핑됨.
@@ -281,11 +286,18 @@ uint64 proc_mmap(const char *path) {
 //  - mmap 영역이면 → 그 파일 오프셋의 블록을 디스크에서 읽어 채움
 // 처리하면 1(명령 재시도), 우리 영역이 아니면 0.
 int proc_pagefault(uint64 va, int store) {
-    (void)store;
     struct proc *p = current_proc();
     if (!p || !p->is_user)
         return 0;
     uint64 a = va & ~(uint64)(PGSIZE - 1);          // 페이지 정렬
+
+    // --- COW: 공유 페이지에 쓰기 폴트 → 복제 ---
+    // (이미 매핑된 페이지이므로 아래 demand 분기보다 먼저 처리해야 한다.)
+    if (store && uvm_cow_fault(p->pagetable, a)) {
+        uart_puts("[cow] copied a shared page on write at va=");
+        uart_hex(a); uart_putc('\n');
+        return 1;
+    }
 
     if (a >= HEAPBASE && a < p->heap_top) {          // --- 힙: 빈 페이지 ---
         char *mem = kalloc();

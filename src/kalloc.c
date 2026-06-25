@@ -23,8 +23,22 @@ static struct run    *freelist = 0;
 static uint64         freecnt = 0;
 static struct spinlock kmem_lock;   // 여러 코어가 동시 할당/해제하므로 보호
 
+// 물리 페이지 참조 카운트(COW용). 인덱스 = (pa - RAMBASE) / PGSIZE.
+// "이 페이지를 몇 개의 주소공간이 공유하나"를 센다. 0이 될 때만 진짜 반납.
+#define RAMBASE 0x80000000UL
+#define NPAGES  ((PHYSTOP - RAMBASE) / PGSIZE)
+static uint8 refcnt[NPAGES];
+static int refidx(void *pa) { return (int)(((uint64)pa - RAMBASE) >> 12); }
+
 void kfree(void *pa) {
     acquire(&kmem_lock);
+    int i = refidx(pa);
+    if (refcnt[i] > 1) {           // 아직 다른 주소공간이 공유 중 → 반납하지 않음
+        refcnt[i]--;
+        release(&kmem_lock);
+        return;
+    }
+    refcnt[i] = 0;
     struct run *r = (struct run *)pa;
     r->next = freelist;
     freelist = r;
@@ -32,11 +46,20 @@ void kfree(void *pa) {
     release(&kmem_lock);
 }
 
+// 공유 시작: 이 페이지를 가리키는 주소공간이 하나 늘었다(fork의 COW 공유).
+void kref_inc(void *pa) {
+    acquire(&kmem_lock);
+    refcnt[refidx(pa)]++;
+    release(&kmem_lock);
+}
+
 void kinit(void) {
     initlock(&kmem_lock);
     uint64 p = PGROUNDUP((uint64)end);
-    for (; p + PGSIZE <= PHYSTOP; p += PGSIZE)
+    for (; p + PGSIZE <= PHYSTOP; p += PGSIZE) {
+        refcnt[refidx((void *)p)] = 1;   // 1로 두고 kfree(→0, 반납)해 경로 일관화
         kfree((void *)p);
+    }
 }
 
 void *kalloc(void) {
@@ -45,6 +68,7 @@ void *kalloc(void) {
     if (r) {
         freelist = r->next;
         freecnt--;
+        refcnt[refidx(r)] = 1;     // 새로 할당된 페이지는 소유자 1명
     }
     release(&kmem_lock);
     return (void *)r;  // 0이면 메모리 부족
