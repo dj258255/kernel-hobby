@@ -49,7 +49,7 @@ make run      # QEMU virt + OpenSBI로 부팅 (UART → stdout). 종료: Ctrl-A 
 | fs | 쓰기 가능 FS(생성/영속) | 완료 (로깅·inode·삭제는 정제) |
 | cow | Copy-on-Write fork | 설계상 제약(우리 fork는 프레임을 유저 스택에 둠) |
 | thread | 유저 스레드(uthread) | 보류(단일 페이지 프로그램 모델 — 전역/스택 배치 제약) |
-| lock | 병렬성·락(멀티코어 SMP) | 예정(큰 리팩터) |
+| lock | 병렬성·락(멀티코어 SMP) | 시작 — 멀티하트 부팅(SBI HSM) + 스핀락 + 코어별 상태(`tp`). 다음: 공유 자료구조 락 + 코어별 스케줄러 |
 | net | TCP/IP 네트워크 스택 | 예정(큰 작업) |
 
 ## 구조
@@ -70,6 +70,7 @@ hobby-kernel/
 │   ├── fs.c           # 읽기 전용 파일시스템
 │   ├── fsformat.h     # 온디스크 포맷(커널+mkfs 공유)
 │   ├── console.c      # 콘솔 입력(라인 버퍼 + 블로킹 read)
+│   ├── spinlock.c     # 스핀락 + 코어별 인터럽트 중첩(SMP)
 │   ├── user.c         # 시스템콜 디스패치
 │   ├── initcode.S     # 셸 ELF 임베드(.incbin)
 │   └── main.c         # kmain

@@ -38,8 +38,12 @@ static inline void   w_satp(uint64 x) { asm volatile("csrw satp, %0" : : "r"(x))
 static inline uint64 r_satp(void) { uint64 x; asm volatile("csrr %0, satp" : "=r"(x)); return x; }
 static inline void   sfence_vma(void) { asm volatile("sfence.vma zero, zero"); }  // TLB flush
 
-// S-mode 글로벌 인터럽트 켜기/끄기
+// S-mode 글로벌 인터럽트 켜기/끄기/상태
 static inline void intr_on(void) { w_sstatus(r_sstatus() | SSTATUS_SIE); }
 static inline void intr_off(void) { w_sstatus(r_sstatus() & ~SSTATUS_SIE); }
+static inline int  intr_get(void) { return (r_sstatus() & SSTATUS_SIE) != 0; }
+
+// tp 레지스터 = 이 코어의 hartid (entry.S가 세팅)
+static inline uint64 r_tp(void) { uint64 x; asm volatile("mv %0, tp" : "=r"(x)); return x; }
 
 #endif

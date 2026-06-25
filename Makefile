@@ -16,7 +16,7 @@ UCFLAGS := -march=rv64imac_zicsr_zifencei -mabi=lp64 -mcmodel=medany \
            -ffunction-sections -Os -g -Iuser
 LDFLAGS := -T kernel.ld -nostdlib
 
-OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/console.o build/kalloc.o build/vm.o build/elf.o build/virtio.o build/fs.o build/user.o build/proc.o build/swtch.o build/initcode.o build/main.o
+OBJS := build/entry.o build/kernelvec.o build/uart.o build/trap.o build/plic.o build/console.o build/spinlock.o build/kalloc.o build/vm.o build/elf.o build/virtio.o build/fs.o build/user.o build/proc.o build/swtch.o build/initcode.o build/main.o
 
 # 호스트(맥) 컴파일러로 빌드하는 도구 + 디스크에 담을 파일들
 HOSTCC  := cc
@@ -79,7 +79,7 @@ QEMU_DISK := -global virtio-mmio.force-legacy=false \
              -drive file=build/fs.img,if=none,format=raw,id=x0 \
              -device virtio-blk-device,drive=x0,bus=virtio-mmio-bus.0
 run: build/kernel.elf build/fs.img
-	qemu-system-riscv64 -machine virt -bios default -nographic -kernel build/kernel.elf $(QEMU_DISK)
+	qemu-system-riscv64 -machine virt -smp 3 -bios default -nographic -kernel build/kernel.elf $(QEMU_DISK)
 
 clean:
 	rm -rf build
