@@ -1,8 +1,9 @@
 // uart.c — NS16550 UART 드라이버 (QEMU virt: 0x1000_0000)
 //
 // QEMU virt 머신의 시리얼 포트는 메모리 매핑된 NS16550 호환 UART다.
-// OpenSBI가 이미 초기화해 두므로, 우리는 송신 레지스터에 쓰기만 하면 된다.
-// (이게 OS 출력의 본질 — 하드웨어 주소에 직접 쓴다. xv6의 uart.c와 같은 방식.)
+// QEMU virt에선 UART가 이미 사용 가능하고 OpenSBI도 같은 UART를 콘솔로 쓰므로,
+// 별도 초기화 없이 송신 레지스터에 쓰기만 하면 된다. (SBI 콘솔 호출이 아니라
+// MMIO에 직접 쓰는 방식 — OpenSBI와 같은 장치를 공유한다. xv6의 uart.c와 같은 방식.)
 
 #include "uart.h"
 #include "console.h"
@@ -22,7 +23,7 @@ static volatile unsigned char *const uart = (volatile unsigned char *)UART0;
 
 void uart_init(void) {
     initlock(&uart_lock);
-    // OpenSBI가 이미 보레이트 등을 설정해 두어 추가 초기화가 필요 없다.
+    // QEMU virt에선 UART가 이미 사용 가능해(OpenSBI도 같은 UART 사용) 추가 초기화가 필요 없다.
 }
 
 // 락 없이 한 글자(내부용). 공개 함수가 메시지 단위로 락을 잡고 호출.
