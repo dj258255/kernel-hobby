@@ -272,6 +272,8 @@ int fs_create(const char *name, const char *data, int size) {
             return -1;                      // 이미 존재(덮어쓰기 미지원)
 
     int nblocks = (size + BSIZE - 1) / BSIZE;
+    if (nblocks + 2 > LOGN)                  // 트랜잭션(데이터 nblocks + 디렉터리 + 슈퍼블록)이 로그보다 크면
+        return -1;                          //   메모리를 건드리기 전에 거부(-ENOSPC). 호출부가 실패로 처리.
     int start = balloc_contig(nblocks);     // 비트맵에서 빈 자리 찾기(재사용 가능)
     if (start < 0) return -1;               // 공간 없음
 
