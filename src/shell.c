@@ -35,7 +35,7 @@ static void execute(const char *cmd) {
     } else if (str_eq(cmd, "help")) {
         uart_puts("commands: help, about, uptime, mem, ps, ls, cat <file>, clear, whoami, echo <text>\n");
     } else if (str_eq(cmd, "about")) {
-        uart_puts("hobby-kernel (C / RISC-V) -- a from-scratch learning kernel\n");
+        uart_puts("kernel-hobby (C / RISC-V) -- a from-scratch learning kernel\n");
     } else if (str_eq(cmd, "uptime")) {
         uart_puts("uptime: ");
         uart_dec(clock_ticks() / 10);  // 타이머 0.1초 간격 → /10 = 초

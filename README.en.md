@@ -2,7 +2,7 @@
 
 [한국어](README.md) | **English**
 
-![hobby-kernel userspace shell demo](docs/demo.svg)
+![kernel-hobby userspace shell demo](docs/demo.svg)
 
 A **RISC-V learning kernel** written from scratch in C. The goal is to understand OS internals — the user/kernel boundary, system calls, processes, and a filesystem — by implementing them by hand. It follows [xv6 (MIT 6.S081)](https://pdos.csail.mit.edu/6.828/2023/xv6.html) as a reference.
 

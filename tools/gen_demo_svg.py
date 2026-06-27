@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-# gen_demo_svg.py — hobby-kernel 유저공간 셸 데모를 애니메이션 SVG로 생성.
+# gen_demo_svg.py — kernel-hobby 유저공간 셸 데모를 애니메이션 SVG로 생성.
 # 외부 의존성 없음. SMIL로 줄별 reveal + 명령어 타이핑 wipe + 깜빡이는 커서.
 # 출력은 정적 이미지처럼 어디서나(GitHub/블로그) 임베드된다.
 
@@ -25,18 +25,18 @@ TYPE_PER_CHAR = 0.07
 
 lines = [
     ("out", [("OpenSBI v1.5.1   ->  S-mode", TITLE)], 0.15),
-    ("out", [("hobby-kernel v0.1  (C / RISC-V)", BRIGHT)], 0.35),
+    ("out", [("kernel-hobby v0.1  (C / RISC-V)", BRIGHT)], 0.35),
     ("ok",  "paging enabled (Sv39)", 0.60),
     ("ok",  "virtio-blk disk ready", 0.85),
     ("ok",  "filesystem mounted: 3 files", 1.10),
     ("blank",),
-    ("out", [("hobby-kernel userspace shell. try: ls, cat motd.txt, hello", TITLE)], 1.45),
+    ("out", [("kernel-hobby userspace shell. try: ls, cat motd.txt, hello", TITLE)], 1.45),
     ("cmd", "ls", 1.95),
     ("out", [("  motd.txt   readme.txt   hello", DIM)], 2.45),
     ("cmd", "hello", 3.05),
     ("out", [("  [hello] I am a separate program, exec'd from disk!", BRIGHT)], 3.70),
     ("cmd", "cat motd.txt", 4.35),
-    ("out", [("Welcome to hobby-kernel (C / RISC-V).", DIM)], 5.30),
+    ("out", [("Welcome to kernel-hobby (C / RISC-V).", DIM)], 5.30),
     ("out", [("This text lives on a virtio-blk disk, read by the kernel.", DIM)], 5.45),
     ("cmd", "mem", 6.05),
     ("out", [("free pages: 32091  (~125 MB)", DIM)], 6.55),
@@ -120,7 +120,7 @@ svg = f'''<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 {W} {H}" width="{
   <circle cx="66" cy="68" r="6" fill="#ff5f56"/>
   <circle cx="86" cy="68" r="6" fill="#ffbd2e"/>
   <circle cx="106" cy="68" r="6" fill="#27c93f"/>
-  <text x="370" y="72" text-anchor="middle" class="mono" font-size="12" fill="{TITLE}">hobby-kernel — qemu riscv64</text>
+  <text x="370" y="72" text-anchor="middle" class="mono" font-size="12" fill="{TITLE}">kernel-hobby — qemu riscv64</text>
   <line x1="40" y1="90" x2="700" y2="90" stroke="#2a3140" stroke-width="1.5"/>
   <g class="mono" font-size="{FS}" xml:space="preserve">
 {chr(10).join("    " + p for p in parts)}

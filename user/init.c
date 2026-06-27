@@ -30,7 +30,7 @@ static int startswith(const char *s, const char *p) {
 void _start(void) {
     char line[128];
 
-    puts("\nhobby-kernel userspace shell. try: ls, cat motd.txt, hello\n");
+    puts("\nkernel-hobby userspace shell. try: ls, cat motd.txt, hello\n");
 
     for (;;) {
         puts("$ ");

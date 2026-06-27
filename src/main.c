@@ -55,7 +55,7 @@ void kmain(void) {
     uart_init();
     uart_puts("\n");
     uart_puts("========================================\n");
-    uart_puts("  hobby-kernel v0.1  (C / RISC-V)\n");
+    uart_puts("  kernel-hobby v0.1  (C / RISC-V)\n");
     uart_puts("  booted in S-mode under OpenSBI\n");
     uart_puts("========================================\n");
 

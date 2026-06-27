@@ -1,4 +1,4 @@
-hobby-kernel filesystem (Stage 6)
+kernel-hobby filesystem (Stage 6)
 
 A tiny read-only filesystem on a virtio-blk device:
   block 0   superblock (magic + file count)
