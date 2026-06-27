@@ -1,4 +1,4 @@
-# hobby-kernel
+# kernel-hobby
 
 **한국어** | [English](README.en.md)
 
@@ -129,7 +129,7 @@ xv6 입문 랩을 넘어 더 붙여볼 주제들. **전부 미구현**이고(코
 ## 구조
 
 ```
-hobby-kernel/
+kernel-hobby/
 ├── src/
 │   ├── entry.S        # S-mode 진입점 (스택 설정 → kmain)
 │   ├── kernelvec.S    # 트랩 진입/복귀 (+ forkret)

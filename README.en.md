@@ -1,4 +1,4 @@
-# hobby-kernel
+# kernel-hobby
 
 [한국어](README.md) | **English**
 
@@ -45,7 +45,7 @@ make run      # boot on QEMU virt + OpenSBI (UART -> stdout). Quit: Ctrl-A then 
 ## Layout
 
 ```
-hobby-kernel/
+kernel-hobby/
 ├── src/
 │   ├── entry.S        # S-mode entry (set up stack -> kmain)
 │   ├── kernelvec.S    # trap entry/return (+ forkret)
